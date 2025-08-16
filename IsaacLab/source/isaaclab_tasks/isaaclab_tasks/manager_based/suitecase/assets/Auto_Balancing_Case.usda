@@ -354,9 +354,9 @@ def Xform "World"
                 apiSchemas = ["PhysxJointAPI", "PhysicsDriveAPI:angular"]
             )
             {
-                float drive:angular:physics:damping = 0.0011264092
+                float drive:angular:physics:damping = 0.0
                 float drive:angular:physics:maxForce = 3.4028235e38
-                float drive:angular:physics:stiffness = 2.8160229
+                float drive:angular:physics:stiffness = 0.0
                 float drive:angular:physics:targetPosition = 0
                 uniform token drive:angular:physics:type = "force"
                 uniform token physics:axis = "Z"
@@ -364,7 +364,7 @@ def Xform "World"
                 rel physics:body1 = </World/Auto_Balancing_Case/FR_wheelbase_1>
                 float physics:breakForce = 3.4028235e38
                 float physics:breakTorque = 3.4028235e38
-                float physics:JointEquivalentInertia = 0.0045056366
+                float physics:JointEquivalentInertia = 0.005
                 point3f physics:localPos0 = (0.02, 0.21, 0.0001)
                 point3f physics:localPos1 = (0, 0, 0)
                 quatf physics:localRot0 = (0, 0, 1, 0)
@@ -378,9 +378,9 @@ def Xform "World"
                 apiSchemas = ["PhysxJointAPI", "PhysicsDriveAPI:angular"]
             )
             {
-                float drive:angular:physics:damping = 0.00003157205
+                float drive:angular:physics:damping = 0.0
                 float drive:angular:physics:maxForce = 3.4028235e38
-                float drive:angular:physics:stiffness = 0.078930125
+                float drive:angular:physics:stiffness = 0.0
                 float drive:angular:physics:targetPosition = 0
                 uniform token drive:angular:physics:type = "force"
                 uniform token physics:axis = "Y"
@@ -388,7 +388,7 @@ def Xform "World"
                 rel physics:body1 = </World/Auto_Balancing_Case/FR_wheel_1>
                 float physics:breakForce = 3.4028235e38
                 float physics:breakTorque = 3.4028235e38
-                float physics:JointEquivalentInertia = 0.0001262882
+                float physics:JointEquivalentInertia = 0.005
                 point3f physics:localPos0 = (0.02, 0, -0.035)
                 point3f physics:localPos1 = (0, 0, 0)
                 quatf physics:localRot0 = (1, 0, 0, 0)
@@ -402,9 +402,9 @@ def Xform "World"
                 apiSchemas = ["PhysxJointAPI", "PhysicsDriveAPI:angular"]
             )
             {
-                float drive:angular:physics:damping = 0.004086394
+                float drive:angular:physics:damping = 0.0
                 float drive:angular:physics:maxForce = 3.4028235e38
-                float drive:angular:physics:stiffness = 10.215984
+                float drive:angular:physics:stiffness = 0.0
                 float drive:angular:physics:targetPosition = 0
                 uniform token drive:angular:physics:type = "force"
                 uniform token physics:axis = "Z"
@@ -412,7 +412,7 @@ def Xform "World"
                 rel physics:body1 = </World/Auto_Balancing_Case/RR_wheelbase_1>
                 float physics:breakForce = 3.4028235e38
                 float physics:breakTorque = 3.4028235e38
-                float physics:JointEquivalentInertia = 0.016345575
+                float physics:JointEquivalentInertia = 0.005
                 point3f physics:localPos0 = (0.34, 0.21, 0.0001)
                 point3f physics:localPos1 = (0, 0, 0)
                 quatf physics:localRot0 = (0, 0, 1, 0)
@@ -426,9 +426,9 @@ def Xform "World"
                 apiSchemas = ["PhysxJointAPI", "PhysicsDriveAPI:angular"]
             )
             {
-                float drive:angular:physics:damping = 0.000031525222
+                float drive:angular:physics:damping = 0.0
                 float drive:angular:physics:maxForce = 3.4028235e38
-                float drive:angular:physics:stiffness = 0.07881305
+                float drive:angular:physics:stiffness = 0.0
                 float drive:angular:physics:targetPosition = 0
                 uniform token drive:angular:physics:type = "force"
                 uniform token physics:axis = "Y"
@@ -436,7 +436,7 @@ def Xform "World"
                 rel physics:body1 = </World/Auto_Balancing_Case/RR_wheel_1>
                 float physics:breakForce = 3.4028235e38
                 float physics:breakTorque = 3.4028235e38
-                float physics:JointEquivalentInertia = 0.00012610089
+                float physics:JointEquivalentInertia = 0.005
                 point3f physics:localPos0 = (0.01992, 0, -0.035)
                 point3f physics:localPos1 = (0, 0, 0)
                 quatf physics:localRot0 = (1, 0, 0, 0)
@@ -450,9 +450,9 @@ def Xform "World"
                 apiSchemas = ["PhysxJointAPI", "PhysicsDriveAPI:angular"]
             )
             {
-                float drive:angular:physics:damping = 0.0000676805
+                float drive:angular:physics:damping = 0.0
                 float drive:angular:physics:maxForce = 3.4028235e38
-                float drive:angular:physics:stiffness = 0.16920125
+                float drive:angular:physics:stiffness = 0.0
                 float drive:angular:physics:targetPosition = 0
                 uniform token drive:angular:physics:type = "force"
                 uniform token physics:axis = "Z"
@@ -460,7 +460,7 @@ def Xform "World"
                 rel physics:body1 = </World/Auto_Balancing_Case/FL_wheelbase_1>
                 float physics:breakForce = 3.4028235e38
                 float physics:breakTorque = 3.4028235e38
-                float physics:JointEquivalentInertia = 0.000270722
+                float physics:JointEquivalentInertia = 0.005
                 point3f physics:localPos0 = (0.02, 0.02, 0.0001)
                 point3f physics:localPos1 = (0, 0, 0)
                 quatf physics:localRot0 = (0, 0, 1, 0)
@@ -474,9 +474,9 @@ def Xform "World"
                 apiSchemas = ["PhysxJointAPI", "PhysicsDriveAPI:angular"]
             )
             {
-                float drive:angular:physics:damping = 0.000031572017
+                float drive:angular:physics:damping = 0.0
                 float drive:angular:physics:maxForce = 3.4028235e38
-                float drive:angular:physics:stiffness = 0.07893004
+                float drive:angular:physics:stiffness = 0.0
                 float drive:angular:physics:targetPosition = 0
                 uniform token drive:angular:physics:type = "force"
                 uniform token physics:axis = "Y"
@@ -484,7 +484,7 @@ def Xform "World"
                 rel physics:body1 = </World/Auto_Balancing_Case/FL_wheel_1>
                 float physics:breakForce = 3.4028235e38
                 float physics:breakTorque = 3.4028235e38
-                float physics:JointEquivalentInertia = 0.00012628807
+                float physics:JointEquivalentInertia = 0.005
                 point3f physics:localPos0 = (0.02, 0, -0.035)
                 point3f physics:localPos1 = (0, 0, 0)
                 quatf physics:localRot0 = (1, 0, 0, 0)
@@ -498,9 +498,9 @@ def Xform "World"
                 apiSchemas = ["PhysxJointAPI", "PhysicsDriveAPI:angular"]
             )
             {
-                float drive:angular:physics:damping = 0.00304981
+                float drive:angular:physics:damping = 0.0
                 float drive:angular:physics:maxForce = 3.4028235e38
-                float drive:angular:physics:stiffness = 7.624525
+                float drive:angular:physics:stiffness = 0.0
                 float drive:angular:physics:targetPosition = 0
                 uniform token drive:angular:physics:type = "force"
                 uniform token physics:axis = "Z"
@@ -508,7 +508,7 @@ def Xform "World"
                 rel physics:body1 = </World/Auto_Balancing_Case/RL_wheelbase_1>
                 float physics:breakForce = 3.4028235e38
                 float physics:breakTorque = 3.4028235e38
-                float physics:JointEquivalentInertia = 0.01219924
+                float physics:JointEquivalentInertia = 0.005
                 point3f physics:localPos0 = (0.34, 0.02, 0.0001)
                 point3f physics:localPos1 = (0, 0, 0)
                 quatf physics:localRot0 = (0, 0, 1, 0)
@@ -522,9 +522,9 @@ def Xform "World"
                 apiSchemas = ["PhysxJointAPI", "PhysicsDriveAPI:angular"]
             )
             {
-                float drive:angular:physics:damping = 0.000031525193
+                float drive:angular:physics:damping = 0.0
                 float drive:angular:physics:maxForce = 3.4028235e38
-                float drive:angular:physics:stiffness = 0.07881298
+                float drive:angular:physics:stiffness = 0.0
                 float drive:angular:physics:targetPosition = 0
                 uniform token drive:angular:physics:type = "force"
                 uniform token physics:axis = "Y"
@@ -532,7 +532,7 @@ def Xform "World"
                 rel physics:body1 = </World/Auto_Balancing_Case/RL_wheel_1>
                 float physics:breakForce = 3.4028235e38
                 float physics:breakTorque = 3.4028235e38
-                float physics:JointEquivalentInertia = 0.00012610077
+                float physics:JointEquivalentInertia = 0.005
                 point3f physics:localPos0 = (0.01992, 0, -0.035)
                 point3f physics:localPos1 = (0, 0, 0)
                 quatf physics:localRot0 = (1, 0, 0, 0)
