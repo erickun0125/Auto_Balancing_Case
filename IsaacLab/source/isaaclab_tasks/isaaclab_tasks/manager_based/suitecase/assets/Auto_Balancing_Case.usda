@@ -354,7 +354,7 @@ def Xform "World"
                 apiSchemas = ["PhysxJointAPI", "PhysicsDriveAPI:angular"]
             )
             {
-                float drive:angular:physics:damping = 0.0
+                float drive:angular:physics:damping = 0.001
                 float drive:angular:physics:maxForce = 3.4028235e38
                 float drive:angular:physics:stiffness = 0.0
                 float drive:angular:physics:targetPosition = 0
@@ -378,7 +378,7 @@ def Xform "World"
                 apiSchemas = ["PhysxJointAPI", "PhysicsDriveAPI:angular"]
             )
             {
-                float drive:angular:physics:damping = 0.0
+                float drive:angular:physics:damping = 0.001
                 float drive:angular:physics:maxForce = 3.4028235e38
                 float drive:angular:physics:stiffness = 0.0
                 float drive:angular:physics:targetPosition = 0
@@ -402,7 +402,7 @@ def Xform "World"
                 apiSchemas = ["PhysxJointAPI", "PhysicsDriveAPI:angular"]
             )
             {
-                float drive:angular:physics:damping = 0.0
+                float drive:angular:physics:damping = 0.001
                 float drive:angular:physics:maxForce = 3.4028235e38
                 float drive:angular:physics:stiffness = 0.0
                 float drive:angular:physics:targetPosition = 0
@@ -426,7 +426,7 @@ def Xform "World"
                 apiSchemas = ["PhysxJointAPI", "PhysicsDriveAPI:angular"]
             )
             {
-                float drive:angular:physics:damping = 0.0
+                float drive:angular:physics:damping = 0.001
                 float drive:angular:physics:maxForce = 3.4028235e38
                 float drive:angular:physics:stiffness = 0.0
                 float drive:angular:physics:targetPosition = 0
@@ -450,7 +450,7 @@ def Xform "World"
                 apiSchemas = ["PhysxJointAPI", "PhysicsDriveAPI:angular"]
             )
             {
-                float drive:angular:physics:damping = 0.0
+                float drive:angular:physics:damping = 0.001
                 float drive:angular:physics:maxForce = 3.4028235e38
                 float drive:angular:physics:stiffness = 0.0
                 float drive:angular:physics:targetPosition = 0
@@ -474,7 +474,7 @@ def Xform "World"
                 apiSchemas = ["PhysxJointAPI", "PhysicsDriveAPI:angular"]
             )
             {
-                float drive:angular:physics:damping = 0.0
+                float drive:angular:physics:damping = 0.001
                 float drive:angular:physics:maxForce = 3.4028235e38
                 float drive:angular:physics:stiffness = 0.0
                 float drive:angular:physics:targetPosition = 0
@@ -498,7 +498,7 @@ def Xform "World"
                 apiSchemas = ["PhysxJointAPI", "PhysicsDriveAPI:angular"]
             )
             {
-                float drive:angular:physics:damping = 0.0
+                float drive:angular:physics:damping = 0.001
                 float drive:angular:physics:maxForce = 3.4028235e38
                 float drive:angular:physics:stiffness = 0.0
                 float drive:angular:physics:targetPosition = 0
@@ -522,7 +522,7 @@ def Xform "World"
                 apiSchemas = ["PhysxJointAPI", "PhysicsDriveAPI:angular"]
             )
             {
-                float drive:angular:physics:damping = 0.0
+                float drive:angular:physics:damping = 0.001
                 float drive:angular:physics:maxForce = 3.4028235e38
                 float drive:angular:physics:stiffness = 0.0
                 float drive:angular:physics:targetPosition = 0
