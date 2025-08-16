@@ -274,7 +274,7 @@ def desired_contacts(env, sensor_cfg: SceneEntityCfg, threshold: float = 1.0) ->
     contacts = (
         contact_sensor.data.net_forces_w_history[:, :, sensor_cfg.body_ids, :].norm(dim=-1).max(dim=1)[0] > threshold
     )
-    zero_contact = (~contacts).any(dim=1)
+    zero_contact = (~contacts).all(dim=1)
     return 1.0 * zero_contact
 
 

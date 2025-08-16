@@ -26,7 +26,62 @@ from isaaclab.envs import mdp
 from isaaclab.actuators import ImplicitActuatorCfg
 
 # Custom MDP functions for Auto_Balancing_Case
-from .mdp_for_ABC import wheel_contact_force_magnitude, handle_contact_force_magnitude, wheel_contact_force_balance
+from .mdp_for_ABC import (
+    wheel_contact_force_magnitude, 
+    handle_contact_force_magnitude, 
+    wheel_contact_force_variance,
+    wheel_contact_force_min_max,
+    apply_external_force_torque_offset,
+    apply_specific_external_force_torque,
+    push_by_setting_specific_velocity
+)
+
+import torch
+
+
+def get_environment_groups(num_envs: int, num_groups: int = 4):
+    """환경들을 그룹으로 나누는 유틸리티 함수.
+    
+    Args:
+        num_envs: 전체 환경 수
+        num_groups: 그룹 수 (기본값: 4)
+        
+    Returns:
+        각 그룹의 환경 ID 리스트
+    """
+    envs_per_group = num_envs // num_groups
+    remainder = num_envs % num_groups
+    
+    groups = []
+    start_idx = 0
+    
+    for i in range(num_groups):
+        # 마지막 그룹에 나머지 환경들을 모두 할당
+        if i == num_groups - 1:
+            end_idx = num_envs
+        else:
+            end_idx = start_idx + envs_per_group + (1 if i < remainder else 0)
+        
+        groups.append(torch.arange(start_idx, end_idx))
+        start_idx = end_idx
+    
+    return groups
+
+
+def configure_event_groups(env_cfg, num_envs: int):
+    """이벤트 그룹을 환경 설정에 적용하는 함수.
+    
+    Args:
+        env_cfg: 환경 설정 객체
+        num_envs: 전체 환경 수
+    """
+    groups = get_environment_groups(num_envs, 4)
+    
+    # 각 이벤트를 해당 그룹에만 적용
+    env_cfg.events.push_robot.env_ids = groups[0]
+    env_cfg.events.external_wrench_with_offset.env_ids = groups[1]
+    env_cfg.events.specific_external_wrench.env_ids = groups[2]
+    env_cfg.events.specific_velocity_push.env_ids = groups[3]
 
 
 # USD path: defaults to local .usda; can be overridden by environment variable.
@@ -86,10 +141,10 @@ SUITECASE_CFG = ArticulationCfg(
     actuators={
         "balance_hinge": ImplicitActuatorCfg(
             joint_names_expr=[BALANCE_JOINT_NAME],
-            stiffness=100.0,
-            damping=5.0,
-            effort_limit_sim=None,
-            velocity_limit_sim=None,
+            stiffness=10.0,
+            damping=1.0,
+            effort_limit_sim=3.0,
+            velocity_limit_sim=6,
         )
     },
 )
@@ -139,7 +194,7 @@ class ActionsCfg:
         scale=1.0,
         use_default_offset=True,
         preserve_order=True,
-        clip={BALANCE_JOINT_NAME: (-0.5236, 0.5236)},  # -30° to +30° in radians
+        clip={BALANCE_JOINT_NAME: (-0.5, 0.5)},  # less than -30° to +30° in radians
     )
 
 
@@ -161,7 +216,7 @@ class ObservationsCfg:
         joint_vel = ObsTerm(
             func=mdp.joint_vel_rel,
             params={"asset_cfg": SceneEntityCfg("robot", joint_names=[BALANCE_JOINT_NAME])},
-            noise=Unoise(n_min=-0.1, n_max=0.1),
+            noise=Unoise(n_min=-0.05, n_max=0.05),
             history_length=OBS_HISTORY_LENGTH,
         )
 
@@ -254,7 +309,7 @@ class EventCfg:
                 "z": (-0.25, 0.25),
                 "roll": (-0.5, 0.5),
                 "pitch": (-0.5, 0.5),
-                "yaw": (-0.5, 0.5),
+                "yaw": (-0.0, 0.0),
             },
         },
     )
@@ -286,18 +341,53 @@ class EventCfg:
             },
         },
     )
-    
-    # Intermittent external force/torque disturbance applied on handle/body
-    external_wrench = EventTerm(
-        func=mdp.apply_external_force_torque,
+
+    # Specific velocity push applied to robot (targeted disturbance)
+    specific_velocity_push = EventTerm(
+        func=push_by_setting_specific_velocity,
         mode="interval",
-        interval_range_s=(4.0, 8.0),
+        interval_range_s=(0.0, 20.0),
         params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=[HANDLE_BODY_NAME]),
-            "force_range": (-30.0, 30.0),
-            "torque_range": (-10.0, 10.0),
+            "asset_cfg": SceneEntityCfg("robot"),
+            "vel_x_range": (-2.0, 2.0),  # x-direction velocity range
+            "vel_y": 0.0,  # y-direction velocity (fixed)
+            "vel_z": 0.0,  # z-direction velocity (fixed)
+            "ang_vel_x": 0.0,  # roll (fixed)
+            "ang_vel_y": 0.0,  # pitch (fixed)
+            "ang_vel_z": 0.0,  # yaw (fixed)
         },
     )
+
+    # External force/torque disturbance with position offset applied on handle/body
+    external_wrench_with_offset = EventTerm(
+        func=apply_external_force_torque_offset,
+        mode="interval",
+        interval_range_s=(2.0, 10.0),
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=[HANDLE_BODY_NAME]),
+            "force_range": (-10.0, 10.0),
+            "torque_range": (-1.0, 1.0),
+            "position_offset": (0.0, 0.0, 0.89),  # Offset from body center of mass (x, y, z)
+        },
+    )
+
+    # Specific external force/torque applied on handle/body (example)
+    specific_external_wrench = EventTerm(
+        func=apply_specific_external_force_torque,
+        mode="interval",
+        interval_range_s=(5.0, 10.0),
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=[HANDLE_BODY_NAME]),
+            "force_x_range": (-20.0, 20.0),  # x-direction force range
+            "force_y": 0.0,  # y-direction force (fixed)
+            "force_z": 0.0,  # z-direction force (fixed)
+            "torque_x_range": (-2.0, 2.0),  # x-direction torque range
+            "torque_y": 0.0,  # y-direction torque (fixed)
+            "torque_z": 0.0,  # z-direction torque (fixed)
+            "position_offset": (0.00, 0.0, 0.89),  # Adjusted offset
+        },
+    )
+
 
     # Randomize handle body mass for robustness
     randomize_handle_mass = EventTerm(
@@ -321,7 +411,7 @@ class EventCfg:
             "com_range": {"x": (-0.1, 0.1), "y": (-0.1, 0.1), "z": (-0.1, 0.1)},
         },
     )
-    '''
+    
     # Randomize actuator gains for robustness
     randomize_actuator_gains = EventTerm(
         func=mdp.randomize_actuator_gains,
@@ -334,7 +424,7 @@ class EventCfg:
             "distribution": "uniform",
         },
     )
-    '''
+    
     # Randomize joint parameters for robustness
     randomize_joint_params = EventTerm(
         func=mdp.randomize_joint_parameters,
@@ -398,16 +488,23 @@ class RewardsCfg:
         },
     )
     
-    # (5) 4개 wheel의 contact force 값이 최대한 비슷하도록
+    # (5) 4개 wheel의 contact force 값이 최대한 비슷하도록 (variance 기반)
     wheel_contact_balance = RewTerm(
-        func=wheel_contact_force_balance,
+        func=wheel_contact_force_variance,
         weight=1.0,  # reward for balanced contact forces
         params={"sensor_cfg": SceneEntityCfg("wheel_contact_forces", body_names=WHEEL_BODIES_REGEX)},
     )
+    
+    # (6) 4개 wheel의 contact force 최대-최소 차이 penalize
+    wheel_contact_min_max_penalty = RewTerm(
+        func=wheel_contact_force_min_max,
+        weight=-0.5,  # penalty for unbalanced contact forces
+        params={"sensor_cfg": SceneEntityCfg("wheel_contact_forces", body_names=WHEEL_BODIES_REGEX)},
+    )
 
-    # (6) Action smoothness and magnitude penalty
-    action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-0.001)
-    action_l2 = RewTerm(func=mdp.action_l2, weight=-0.0005)
+    # (7) Action smoothness
+    action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-0.01)
+
 
 
 @configclass
@@ -447,6 +544,9 @@ class SuitecaseEnvCfg(ManagerBasedRLEnvCfg):
             self.scene.wheel_contact_forces.update_period = self.sim.dt
         if getattr(self.scene, "handle_contact_forces", None) is not None:
             self.scene.handle_contact_forces.update_period = self.sim.dt
+        
+        # Configure event groups to avoid overlap
+        configure_event_groups(self, self.scene.num_envs)
 
 
 @configclass
@@ -461,5 +561,6 @@ class SuitecasePlayEnvCfg(SuitecaseEnvCfg):
         self.episode_length_s = 10.0
 
         self.observations.policy.enable_corruption = False
-        self.events.external_wrench = None
-        self.events.push_robot = None
+        
+        # Configure event groups for play environment
+        configure_event_groups(self, self.scene.num_envs)
