@@ -123,7 +123,7 @@ def desired_contacts_any(env, sensor_cfg: SceneEntityCfg, threshold: float = 1.0
 
 def apply_external_force_torque_offset(
     env,
-    env_ids: torch.Tensor,
+    env_ids,
     force_range: tuple[float, float],
     torque_range: tuple[float, float],
     position_offset: tuple[float, float, float] = (0.0, 0.0, 0.0),
@@ -149,6 +149,8 @@ def apply_external_force_torque_offset(
     # resolve environment ids
     if env_ids is None:
         env_ids = torch.arange(env.scene.num_envs, device=asset.device)
+    elif not isinstance(env_ids, torch.Tensor):
+        env_ids = torch.tensor(env_ids, device=asset.device, dtype=torch.long)
     
     # resolve number of bodies
     num_bodies = len(asset_cfg.body_ids) if isinstance(asset_cfg.body_ids, list) else asset.num_bodies
@@ -170,12 +172,12 @@ def apply_external_force_torque_offset(
         positions=position_offset_tensor,
         body_ids=asset_cfg.body_ids, 
         env_ids=env_ids,
-        is_global=False  # Apply in local body frame
+        is_global=False  # Apply in world frame
     )
 
 def apply_specific_external_force_torque(
     env,
-    env_ids: torch.Tensor,
+    env_ids,
     force_x_range: tuple[float, float] = (0.0, 0.0),  # x-direction force range
     force_y: float = 0.0,  # y-direction force (fixed)
     force_z: float = 0.0,  # z-direction force (fixed)
@@ -208,6 +210,8 @@ def apply_specific_external_force_torque(
     # resolve environment ids
     if env_ids is None:
         env_ids = torch.arange(env.scene.num_envs, device=asset.device)
+    elif not isinstance(env_ids, torch.Tensor):
+        env_ids = torch.tensor(env_ids, device=asset.device, dtype=torch.long)
     
     # resolve number of bodies
     num_bodies = len(asset_cfg.body_ids) if isinstance(asset_cfg.body_ids, list) else asset.num_bodies
@@ -243,12 +247,12 @@ def apply_specific_external_force_torque(
         positions=position_offset_tensor,
         body_ids=asset_cfg.body_ids, 
         env_ids=env_ids,
-        is_global=True  # Apply in world frame
+        is_global=False  # Apply in world frame
     )
 
 def push_by_setting_specific_velocity(
     env,
-    env_ids: torch.Tensor,
+    env_ids,
     vel_x_range: tuple[float, float] = (0.0, 0.0),  # x-direction velocity range
     vel_y: float = 0.0,  # y-direction velocity (fixed)
     vel_z: float = 0.0,  # z-direction velocity (fixed)
@@ -279,6 +283,8 @@ def push_by_setting_specific_velocity(
     # resolve environment ids
     if env_ids is None:
         env_ids = torch.arange(env.scene.num_envs, device=asset.device)
+    elif not isinstance(env_ids, torch.Tensor):
+        env_ids = torch.tensor(env_ids, device=asset.device, dtype=torch.long)
     
     # Sample random x-direction velocity from range
     vel_x = torch.rand(len(env_ids), device=asset.device) * (vel_x_range[1] - vel_x_range[0]) + vel_x_range[0]
@@ -305,7 +311,7 @@ def push_by_setting_specific_velocity(
 
 def clear_external_force_torque(
     env,
-    env_ids: torch.Tensor,
+    env_ids,
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
 ):
     """Clear external forces and torques from the bodies.
@@ -321,6 +327,8 @@ def clear_external_force_torque(
     # resolve environment ids
     if env_ids is None:
         env_ids = torch.arange(env.scene.num_envs, device=asset.device)
+    elif not isinstance(env_ids, torch.Tensor):
+        env_ids = torch.tensor(env_ids, device=asset.device, dtype=torch.long)
     
     # resolve number of bodies
     num_bodies = len(asset_cfg.body_ids) if isinstance(asset_cfg.body_ids, list) else asset.num_bodies
