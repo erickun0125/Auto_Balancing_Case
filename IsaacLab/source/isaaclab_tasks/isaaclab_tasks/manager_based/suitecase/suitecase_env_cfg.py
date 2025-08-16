@@ -79,9 +79,10 @@ def configure_event_groups(env_cfg, num_envs: int):
     
     # 각 이벤트를 해당 그룹에만 적용 (Tensor를 리스트로 변환)
     env_cfg.events.push_robot.env_ids = groups[0].tolist()
-    env_cfg.events.external_wrench_with_offset.env_ids = groups[1].tolist()
-    env_cfg.events.specific_external_wrench.env_ids = groups[2].tolist()
-    env_cfg.events.specific_velocity_push.env_ids = groups[3].tolist()
+    env_cfg.events.specific_velocity_push.env_ids = groups[1].tolist()
+    env_cfg.events.external_wrench_with_offset.env_ids = groups[2].tolist()
+    env_cfg.events.specific_external_wrench.env_ids = groups[3].tolist()
+
 
 
 # USD path: defaults to local .usda; can be overridden by environment variable.
@@ -318,18 +319,18 @@ class EventCfg:
         func=mdp.reset_joints_by_offset,
         mode="reset",
         params={
-            "asset_cfg": SceneEntityCfg("robot", joint_names=[BALANCE_JOINT_NAME]),
+            "asset_cfg": SceneEntityCfg("robot"),
             "position_range": (-0.1, 0.1),
             "velocity_range": (-0.0, 0.0),
         },
     )
 
-
+    
     # Push the robot by setting velocity for robustness
     push_robot = EventTerm(
         func=mdp.push_by_setting_velocity,
         mode="interval",
-        interval_range_s=(5.0, 10.0),
+        interval_range_s=(5.0, 5.0),
         params={
             "asset_cfg": SceneEntityCfg("robot"),
             "velocity_range": {
@@ -347,10 +348,10 @@ class EventCfg:
     specific_velocity_push = EventTerm(
         func=push_by_setting_specific_velocity,
         mode="interval",
-        interval_range_s=(5.0, 10.0),
+        interval_range_s=(5.0, 5.0),
         params={
             "asset_cfg": SceneEntityCfg("robot"),
-            "vel_x_range": (-1.0, 1.0),  # x-direction velocity range
+            "vel_x_range": (-2.0, 2.0),  # x-direction velocity range
             "vel_y": 0.0,  # y-direction velocity (fixed)
             "vel_z": 0.0,  # z-direction velocity (fixed)
             "ang_vel_x": 0.0,  # roll (fixed)
@@ -359,15 +360,16 @@ class EventCfg:
         },
     )
     
+    
     # External force/torque disturbance with position offset applied on handle/body
     external_wrench_with_offset = EventTerm(
         func=apply_external_force_torque_offset,
         mode="interval",
-        interval_range_s=(4.0, 4.0),
+        interval_range_s=(5.0, 5.0),
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=[HANDLE_BODY_NAME]),
-            "force_range": (-1.0, 1.0),
-            "torque_range": (-0.1, 0.1),
+            "force_range": (-5.0, 5.0),
+            "torque_range": (-1.0, 1.0),
             "position_offset": (0.0, 0.0, 0.89),  # Offset from body center of mass (x, y, z)
         },
     )
@@ -376,19 +378,19 @@ class EventCfg:
     specific_external_wrench = EventTerm(
         func=apply_specific_external_force_torque,
         mode="interval",
-        interval_range_s=(8.0, 8.0),
+        interval_range_s=(5.0, 5.0),
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=[HANDLE_BODY_NAME]),
-            "force_x_range": (-1.0, 1.0),  # x-direction force range
+            "force_x_range": (-10.0, 10.0),  # x-direction force range
             "force_y": 0.0,  # y-direction force (fixed)
             "force_z": 0.0,  # z-direction force (fixed)
-            "torque_x_range": (-0.1, 0.1),  # x-direction torque range
+            "torque_x_range": (-5.0, 5.0),  # x-direction torque range
             "torque_y": 0.0,  # y-direction torque (fixed)
             "torque_z": 0.0,  # z-direction torque (fixed)
-            "position_offset": (0.00, 0.0, 0.89),  # Adjusted offset
+            "position_offset": (0.0, 0.0, 0.89),  # Adjusted offset
         },
     )
-
+    
     '''
     # Randomize handle body mass for robustness
     randomize_handle_mass = EventTerm(
@@ -449,7 +451,7 @@ class RewardsCfg:
     # (0) Surviving reward - 로봇이 살아있을 때마다 보상
     is_alive = RewTerm(
         func=mdp.is_alive,
-        weight=5.0,  # reward for staying alive
+        weight=1.0,  # reward for staying alive
     )
 
     # (-1) Termination penalty - 로봇이 죽을 때 penalty
@@ -475,14 +477,14 @@ class RewardsCfg:
     # (3) BALANCE_JOINT_NAME이 default position과 비슷하도록
     hinge_pos_deviation = RewTerm(
         func=mdp.joint_deviation_l1,
-        weight=-10.0,  # penalty for deviation from default
+        weight=-1.0,  # penalty for deviation from default
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=[BALANCE_JOINT_NAME])},
     )
     
     # (4) 4개의 접촉이 떨어지지 않도록 - wheel contact 유지
     desired_contacts = RewTerm(
         func=mdp.desired_contacts,
-        weight=-1.0,  # penalty when no contact
+        weight=-10.0,  # penalty when no contact
         params={
             "sensor_cfg": SceneEntityCfg("wheel_contact_forces", body_names=WHEEL_BODIES_REGEX),
             "threshold": 1.0
@@ -499,7 +501,7 @@ class RewardsCfg:
     # (6) 4개 wheel의 contact force 최대-최소 차이 penalize
     wheel_contact_min_max_penalty = RewTerm(
         func=wheel_contact_force_min_max,
-        weight=-0.5,  # penalty for unbalanced contact forces
+        weight=-0.1,  # penalty for unbalanced contact forces
         params={"sensor_cfg": SceneEntityCfg("wheel_contact_forces", body_names=WHEEL_BODIES_REGEX)},
     )
 
@@ -533,7 +535,7 @@ class SuitecaseEnvCfg(ManagerBasedRLEnvCfg):
     def __post_init__(self):
         # Simulation/general settings
         self.decimation = 4  # 50 Hz control (dt=0.005 * 4)
-        self.episode_length_s = 16.0
+        self.episode_length_s = 8.0
         self.sim.dt = 0.005  # 200 Hz physics
         self.sim.render_interval = self.decimation
         # Physics material settings
