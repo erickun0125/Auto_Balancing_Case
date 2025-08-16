@@ -20,6 +20,7 @@ from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sensors import ContactSensorCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
+from isaaclab.utils.modifiers import ModifierCfg
 
 # Common MDP utilities
 from isaaclab.envs import mdp
@@ -33,10 +34,146 @@ from .mdp_for_ABC import (
     wheel_contact_force_min_max,
     apply_external_force_torque_offset,
     apply_specific_external_force_torque,
-    push_by_setting_specific_velocity
+    push_by_setting_specific_velocity,
+    nan_detection_termination,
+    extreme_values_termination
 )
 
 import torch
+
+
+def safe_nan_replacement(data: torch.Tensor, replacement_value: float = 0.0, method: str = "zero", 
+                        obs_name: str = "unknown", enable_logging: bool = True, max_log_freq: int = 100) -> torch.Tensor:
+    """NaN 값을 안전한 값으로 대체하는 modifier 함수.
+    
+    Args:
+        data: 입력 텐서
+        replacement_value: NaN을 대체할 값 (기본값: 0.0)
+        method: NaN 대체 방법 ("zero", "mean", "previous")
+        obs_name: observation 이름 (디버깅용)
+        enable_logging: NaN 발생 시 로깅 활성화 (기본값: False)
+        max_log_freq: 최대 로깅 빈도 (기본값: 100)
+        
+    Returns:
+        NaN이 안전한 값으로 대체된 텐서
+    """
+    if not torch.isnan(data).any():
+        return data
+    
+    # NaN 개수 및 위치 로깅 (빈도 제한)
+    nan_count = torch.isnan(data).sum().item()
+    if enable_logging and nan_count > 0:
+        # 로깅 빈도 제한을 위한 간단한 카운터
+        if not hasattr(safe_nan_replacement, '_log_counter'):
+            safe_nan_replacement._log_counter = {}
+        if obs_name not in safe_nan_replacement._log_counter:
+            safe_nan_replacement._log_counter[obs_name] = 0
+        
+        if safe_nan_replacement._log_counter[obs_name] < max_log_freq:
+            print(f"[NaN Safety] {obs_name}: Detected {nan_count} NaN values in tensor of shape {data.shape}")
+            print(f"[NaN Safety] {obs_name}: Using method: {method}, replacement value: {replacement_value}")
+            safe_nan_replacement._log_counter[obs_name] += 1
+    
+    # NaN이 있는 경우에만 처리 (성능 최적화)
+    if method == "zero":
+        # 0.0으로 대체
+        data = torch.where(torch.isnan(data), torch.tensor(replacement_value, device=data.device, dtype=data.dtype), data)
+    elif method == "mean":
+        # 각 차원별로 평균값 계산 (NaN 제외)
+        # batch dimension을 제외하고 계산
+        if data.dim() > 1:
+            # 각 환경별로 평균 계산 (벡터화된 연산 사용)
+            for env_idx in range(data.shape[0]):
+                env_data = data[env_idx]
+                if torch.isnan(env_data).any():
+                    valid_mask = ~torch.isnan(env_data)
+                    if valid_mask.any():
+                        # NaN이 아닌 값들의 평균 계산
+                        mean_val = torch.mean(env_data[valid_mask])
+                        data[env_idx] = torch.where(torch.isnan(env_data), mean_val, env_data)
+                    else:
+                        # 모든 값이 NaN인 경우 기본값 사용
+                        data[env_idx] = torch.where(torch.isnan(env_data), 
+                                                   torch.tensor(replacement_value, device=data.device, dtype=data.dtype), 
+                                                   env_data)
+        else:
+            # 1D 텐서의 경우 전체 평균 계산
+            valid_mask = ~torch.isnan(data)
+            if valid_mask.any():
+                mean_val = torch.mean(data[valid_mask])
+                data = torch.where(torch.isnan(data), mean_val, data)
+            else:
+                data = torch.where(torch.isnan(data), 
+                                 torch.tensor(replacement_value, device=data.device, dtype=data.dtype), 
+                                 data)
+    elif method == "previous":
+        # 이전 값으로 대체 (forward fill)
+        if data.dim() == 1:
+            # 1D 텐서의 경우
+            for i in range(1, data.shape[0]):
+                if torch.isnan(data[i]):
+                    data[i] = data[i-1]
+            # 첫 번째 값이 NaN인 경우 기본값 사용
+            if torch.isnan(data[0]):
+                data[0] = replacement_value
+        elif data.dim() == 2:
+            # 2D 텐서 (num_envs, features)의 경우 각 환경별로 처리
+            # 벡터화된 연산으로 개선
+            for env_idx in range(data.shape[0]):
+                env_data = data[env_idx]
+                if torch.isnan(env_data).any():
+                    # forward fill: 이전 값으로 NaN 대체
+                    nan_mask = torch.isnan(env_data)
+                    if nan_mask.any():
+                        # 첫 번째 값이 NaN인 경우 기본값으로 설정
+                        if nan_mask[0]:
+                            env_data[0] = replacement_value
+                        
+                        # forward fill 적용
+                        for i in range(1, env_data.shape[0]):
+                            if nan_mask[i]:
+                                env_data[i] = env_data[i-1]
+                        
+                        data[env_idx] = env_data
+        else:
+            # 다차원 텐서의 경우 기본값 사용
+            data = torch.where(torch.isnan(data), 
+                             torch.tensor(replacement_value, device=data.device, dtype=data.dtype), 
+                             data)
+    else:
+        # 알 수 없는 방법인 경우 기본값 사용
+        data = torch.where(torch.isnan(data), 
+                         torch.tensor(replacement_value, device=data.device, dtype=data.dtype), 
+                         data)
+    
+    # 최종 검증: 여전히 NaN이 있는지 확인
+    if torch.isnan(data).any():
+        if enable_logging:
+            print(f"[NaN Safety] {obs_name}: WARNING: NaN values still present after replacement!")
+        # 최후의 수단: 모든 NaN을 기본값으로 대체
+        data = torch.where(torch.isnan(data), 
+                         torch.tensor(replacement_value, device=data.device, dtype=data.dtype), 
+                         data)
+    
+    # 추가 검증: 무한대 값이나 매우 큰 값 처리
+    if torch.isinf(data).any() or (data.abs() > 1e6).any():
+        if enable_logging:
+            print(f"[NaN Safety] {obs_name}: WARNING: Infinite or very large values detected!")
+        # 무한대 값과 매우 큰 값을 기본값으로 대체
+        data = torch.where(torch.isinf(data) | (data.abs() > 1e6), 
+                         torch.tensor(replacement_value, device=data.device, dtype=data.dtype), 
+                         data)
+    
+    # 최종 검증: 모든 값이 유효한 범위 내에 있는지 확인
+    if torch.isnan(data).any() or torch.isinf(data).any() or (data.abs() > 1e6).any():
+        if enable_logging:
+            print(f"[NaN Safety] {obs_name}: CRITICAL: Final validation failed! Forcing replacement.")
+        # 모든 문제가 있는 값을 기본값으로 대체
+        data = torch.where(torch.isnan(data) | torch.isinf(data) | (data.abs() > 1e6), 
+                         torch.tensor(replacement_value, device=data.device, dtype=data.dtype), 
+                         data)
+    
+    return data
 
 
 def get_environment_groups(num_envs: int, num_groups: int = 4):
@@ -212,23 +349,31 @@ class ObservationsCfg:
             func=mdp.joint_pos_rel,
             params={"asset_cfg": SceneEntityCfg("robot", joint_names=[BALANCE_JOINT_NAME])},
             noise=Unoise(n_min=-0.005, n_max=0.005),
+            modifiers=[ModifierCfg(func=safe_nan_replacement, params={"replacement_value": 0.0, "method": "zero", "obs_name": "joint_pos"})],
             history_length=OBS_HISTORY_LENGTH,
         )
         joint_vel = ObsTerm(
             func=mdp.joint_vel_rel,
             params={"asset_cfg": SceneEntityCfg("robot", joint_names=[BALANCE_JOINT_NAME])},
             noise=Unoise(n_min=-0.05, n_max=0.05),
+            modifiers=[ModifierCfg(func=safe_nan_replacement, params={"replacement_value": 0.0, "method": "zero", "obs_name": "joint_vel"})],
             history_length=OBS_HISTORY_LENGTH,
         )
 
         # Previous action (for action smoothing/history)
-        prev_action = ObsTerm(func=mdp.last_action, params={"action_name": "hinge_pos"}, history_length=OBS_HISTORY_LENGTH)
+        prev_action = ObsTerm(
+            func=mdp.last_action, 
+            params={"action_name": "hinge_pos"}, 
+            modifiers=[ModifierCfg(func=safe_nan_replacement, params={"replacement_value": 0.0, "method": "previous", "obs_name": "prev_action"})],
+            history_length=OBS_HISTORY_LENGTH
+        )
 
         # Contact force magnitude for all 4 wheels
         wheel_contact_forces = ObsTerm(
             func=wheel_contact_force_magnitude,
             params={"sensor_cfg": SceneEntityCfg("wheel_contact_forces", body_names=WHEEL_BODIES_REGEX)},
             noise=Unoise(n_min=-0.01, n_max=0.01),
+            modifiers=[ModifierCfg(func=safe_nan_replacement, params={"replacement_value": 0.0, "method": "mean", "obs_name": "wheel_contact_forces"})],
             history_length=OBS_HISTORY_LENGTH,
         )
         
@@ -237,6 +382,7 @@ class ObservationsCfg:
             func=handle_contact_force_magnitude,
             params={"sensor_cfg": SceneEntityCfg("handle_contact_forces", body_names=[HANDLE_BODY_NAME])},
             noise=Unoise(n_min=-0.01, n_max=0.01),
+            modifiers=[ModifierCfg(func=safe_nan_replacement, params={"replacement_value": 0.0, "method": "mean", "obs_name": "handle_contact_forces"})],
             history_length=OBS_HISTORY_LENGTH,
         )
 
@@ -255,21 +401,29 @@ class ObservationsCfg:
             func=mdp.joint_pos_rel,
             params={"asset_cfg": SceneEntityCfg("robot", joint_names=[BALANCE_JOINT_NAME])},
             noise=Unoise(n_min=-0.005, n_max=0.005),
+            modifiers=[ModifierCfg(func=safe_nan_replacement, params={"replacement_value": 0.0, "method": "zero", "obs_name": "critic_joint_pos"})],
             history_length=OBS_HISTORY_LENGTH,
         )
         joint_vel = ObsTerm(
             func=mdp.joint_vel_rel,
             params={"asset_cfg": SceneEntityCfg("robot", joint_names=[BALANCE_JOINT_NAME])},
             noise=Unoise(n_min=-0.1, n_max=0.1),
+            modifiers=[ModifierCfg(func=safe_nan_replacement, params={"replacement_value": 0.0, "method": "zero", "obs_name": "critic_joint_vel"})],
             history_length=OBS_HISTORY_LENGTH,
         )
-        prev_action = ObsTerm(func=mdp.last_action, params={"action_name": "hinge_pos"}, history_length=OBS_HISTORY_LENGTH)
+        prev_action = ObsTerm(
+            func=mdp.last_action, 
+            params={"action_name": "hinge_pos"}, 
+            modifiers=[ModifierCfg(func=safe_nan_replacement, params={"replacement_value": 0.0, "method": "previous", "obs_name": "critic_prev_action"})],
+            history_length=OBS_HISTORY_LENGTH
+        )
 
         # Contact force magnitude for all 4 wheels
         wheel_contact_forces = ObsTerm(
             func=wheel_contact_force_magnitude,
             params={"sensor_cfg": SceneEntityCfg("wheel_contact_forces", body_names=WHEEL_BODIES_REGEX)},
             noise=Unoise(n_min=-0.01, n_max=0.01),
+            modifiers=[ModifierCfg(func=safe_nan_replacement, params={"replacement_value": 0.0, "method": "mean", "obs_name": "critic_wheel_contact_forces"})],
             history_length=OBS_HISTORY_LENGTH,
         )
         
@@ -278,6 +432,7 @@ class ObservationsCfg:
             func=handle_contact_force_magnitude,
             params={"sensor_cfg": SceneEntityCfg("handle_contact_forces", body_names=[HANDLE_BODY_NAME])},
             noise=Unoise(n_min=-0.01, n_max=0.01),
+            modifiers=[ModifierCfg(func=safe_nan_replacement, params={"replacement_value": 0.0, "method": "mean", "obs_name": "critic_handle_contact_forces"})],
             history_length=OBS_HISTORY_LENGTH,
         )
 
@@ -516,8 +671,24 @@ class TerminationsCfg:
 
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
     # Terminate on large tilt
-    bad_orientation = DoneTerm(func=mdp.bad_orientation, params={"limit_angle": 0.6})
-
+    bad_orientation = DoneTerm(func=mdp.bad_orientation, params={"limit_angle": 1.0})
+    
+    # Terminate on NaN detection in robot states
+    nan_detection = DoneTerm(
+        func=nan_detection_termination,
+        params={"asset_cfg": SceneEntityCfg("robot")}
+    )
+    
+    # Terminate on extreme values that indicate simulation instability
+    extreme_values = DoneTerm(
+        func=extreme_values_termination,
+        params={
+            "asset_cfg": SceneEntityCfg("robot"),
+            "velocity_limit": 50.0,
+            "angular_velocity_limit": 50.0
+        }
+    )
+    
 
 @configclass
 class SuitecaseEnvCfg(ManagerBasedRLEnvCfg):

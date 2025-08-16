@@ -344,3 +344,204 @@ def clear_external_force_torque(
         body_ids=asset_cfg.body_ids, 
         env_ids=env_ids
     )
+
+
+# termination functions
+
+def nan_detection_termination(env, asset_cfg: SceneEntityCfg) -> torch.Tensor:
+    """Terminate episodes where NaN values are detected in critical robot states.
+    
+    This function checks for NaN values in joint positions, velocities, and root states.
+    Episodes with NaN values are terminated to prevent instability and learning degradation.
+    
+    Args:
+        env: The environment instance
+        asset_cfg: SceneEntityCfg for the robot asset
+        
+    Returns:
+        Boolean tensor indicating which environments should terminate due to NaN detection.
+        Shape: (num_envs,)
+    """
+    # extract the robot asset
+    asset = env.scene[asset_cfg.name]
+    
+    # Initialize termination mask and detailed problem tracking
+    terminate = torch.zeros(env.num_envs, dtype=torch.bool, device=asset.device)
+    problem_details = []
+    
+    # Check for NaN in joint positions
+    joint_pos = asset.data.joint_pos
+    if joint_pos is not None:
+        nan_in_joint_pos = torch.isnan(joint_pos).any(dim=-1)  # (num_envs,)
+        if nan_in_joint_pos.any():
+            nan_env_ids = torch.where(nan_in_joint_pos)[0]
+            for env_id in nan_env_ids:  # Log all environments
+                joint_vals = joint_pos[env_id]
+                nan_joints = torch.where(torch.isnan(joint_vals))[0]
+                for joint_idx in nan_joints:  # Log all joints
+                    problem_details.append(f"Env {env_id.item()}: Joint {joint_idx.item()} position is NaN")
+        terminate = terminate | nan_in_joint_pos
+    
+    # Check for NaN in joint velocities
+    joint_vel = asset.data.joint_vel
+    if joint_vel is not None:
+        nan_in_joint_vel = torch.isnan(joint_vel).any(dim=-1)  # (num_envs,)
+        if nan_in_joint_vel.any():
+            nan_env_ids = torch.where(nan_in_joint_vel)[0]
+            for env_id in nan_env_ids:  # Log all environments
+                joint_vel_vals = joint_vel[env_id]
+                nan_joints = torch.where(torch.isnan(joint_vel_vals))[0]
+                for joint_idx in nan_joints:  # Log all joints
+                    problem_details.append(f"Env {env_id.item()}: Joint {joint_idx.item()} velocity is NaN")
+        terminate = terminate | nan_in_joint_vel
+    
+    # Check for NaN in root position
+    root_pos = asset.data.root_pos_w
+    if root_pos is not None:
+        nan_in_root_pos = torch.isnan(root_pos).any(dim=-1)  # (num_envs,)
+        if nan_in_root_pos.any():
+            nan_env_ids = torch.where(nan_in_root_pos)[0]
+            for env_id in nan_env_ids:  # Log all environments
+                pos_vals = root_pos[env_id]
+                nan_axes = torch.where(torch.isnan(pos_vals))[0]
+                axes_names = ['x', 'y', 'z']
+                for axis_idx in nan_axes:
+                    problem_details.append(f"Env {env_id.item()}: Root position {axes_names[axis_idx]} is NaN")
+        terminate = terminate | nan_in_root_pos
+    
+    # Check for NaN in root orientation
+    root_quat = asset.data.root_quat_w
+    if root_quat is not None:
+        nan_in_root_quat = torch.isnan(root_quat).any(dim=-1)  # (num_envs,)
+        if nan_in_root_quat.any():
+            nan_env_ids = torch.where(nan_in_root_quat)[0]
+            for env_id in nan_env_ids:  # Log all environments
+                quat_vals = root_quat[env_id]
+                nan_components = torch.where(torch.isnan(quat_vals))[0]
+                quat_names = ['w', 'x', 'y', 'z']
+                for comp_idx in nan_components:
+                    problem_details.append(f"Env {env_id.item()}: Root quaternion {quat_names[comp_idx]} is NaN")
+        terminate = terminate | nan_in_root_quat
+    
+    # Check for NaN in root linear velocity
+    root_lin_vel = asset.data.root_lin_vel_w
+    if root_lin_vel is not None:
+        nan_in_root_lin_vel = torch.isnan(root_lin_vel).any(dim=-1)  # (num_envs,)
+        if nan_in_root_lin_vel.any():
+            nan_env_ids = torch.where(nan_in_root_lin_vel)[0]
+            for env_id in nan_env_ids:  # Log all environments
+                vel_vals = root_lin_vel[env_id]
+                nan_axes = torch.where(torch.isnan(vel_vals))[0]
+                axes_names = ['x', 'y', 'z']
+                for axis_idx in nan_axes:
+                    problem_details.append(f"Env {env_id.item()}: Root linear velocity {axes_names[axis_idx]} is NaN")
+        terminate = terminate | nan_in_root_lin_vel
+    
+    # Check for NaN in root angular velocity
+    root_ang_vel = asset.data.root_ang_vel_w
+    if root_ang_vel is not None:
+        nan_in_root_ang_vel = torch.isnan(root_ang_vel).any(dim=-1)  # (num_envs,)
+        if nan_in_root_ang_vel.any():
+            nan_env_ids = torch.where(nan_in_root_ang_vel)[0]
+            for env_id in nan_env_ids:  # Log all environments
+                ang_vel_vals = root_ang_vel[env_id]
+                nan_axes = torch.where(torch.isnan(ang_vel_vals))[0]
+                axes_names = ['x', 'y', 'z']
+                for axis_idx in nan_axes:
+                    problem_details.append(f"Env {env_id.item()}: Root angular velocity {axes_names[axis_idx]} is NaN")
+        terminate = terminate | nan_in_root_ang_vel
+    
+    # Log terminations due to NaN (no frequency limiting)
+    if terminate.any():
+        num_terminated = terminate.sum().item()
+        terminated_env_ids = torch.where(terminate)[0].tolist()
+        print(f"[NaN Termination] Terminating {num_terminated} environments due to NaN detection.")
+        print(f"[NaN Termination] Affected environment IDs: {terminated_env_ids}")
+        if problem_details:
+            print("[NaN Termination] Problem details:")
+            for detail in problem_details:  # Show all problems
+                print(f"  - {detail}")
+    
+    return terminate
+
+
+def extreme_values_termination(env, asset_cfg: SceneEntityCfg, 
+                              velocity_limit: float = 50.0,
+                              angular_velocity_limit: float = 50.0) -> torch.Tensor:
+    """Terminate episodes where robot states have extreme values that indicate simulation instability.
+    
+    This function checks for unreasonably large values in robot states that often precede NaN values
+    or indicate physics solver breakdown.
+    
+    Args:
+        env: The environment instance
+        asset_cfg: SceneEntityCfg for the robot asset
+        velocity_limit: Maximum allowed absolute linear velocity magnitude
+        angular_velocity_limit: Maximum allowed absolute angular velocity magnitude
+        
+    Returns:
+        Boolean tensor indicating which environments should terminate due to extreme values.
+        Shape: (num_envs,)
+    """
+    # extract the robot asset
+    asset = env.scene[asset_cfg.name]
+    
+    # Initialize termination mask and detailed problem tracking
+    terminate = torch.zeros(env.num_envs, dtype=torch.bool, device=asset.device)
+    problem_details = []
+    
+    # Check for extreme values in root linear velocity
+    root_lin_vel = asset.data.root_lin_vel_w
+    if root_lin_vel is not None:
+        vel_magnitude = torch.norm(root_lin_vel, dim=-1)
+        extreme_vel = vel_magnitude > velocity_limit
+        if extreme_vel.any():
+            extreme_env_ids = torch.where(extreme_vel)[0]
+            for env_id in extreme_env_ids:  # Log all environments
+                vel_val = vel_magnitude[env_id].item()
+                vel_vec = root_lin_vel[env_id]
+                problem_details.append(f"Env {env_id.item()}: Linear velocity magnitude {vel_val:.3f} > {velocity_limit} (vec: [{vel_vec[0]:.3f}, {vel_vec[1]:.3f}, {vel_vec[2]:.3f}])")
+        terminate = terminate | extreme_vel
+    
+    # Check for extreme values in root angular velocity
+    root_ang_vel = asset.data.root_ang_vel_w
+    if root_ang_vel is not None:
+        ang_vel_magnitude = torch.norm(root_ang_vel, dim=-1)
+        extreme_ang_vel = ang_vel_magnitude > angular_velocity_limit
+        if extreme_ang_vel.any():
+            extreme_env_ids = torch.where(extreme_ang_vel)[0]
+            for env_id in extreme_env_ids:  # Log all environments
+                ang_vel_val = ang_vel_magnitude[env_id].item()
+                ang_vel_vec = root_ang_vel[env_id]
+                problem_details.append(f"Env {env_id.item()}: Angular velocity magnitude {ang_vel_val:.3f} > {angular_velocity_limit} (vec: [{ang_vel_vec[0]:.3f}, {ang_vel_vec[1]:.3f}, {ang_vel_vec[2]:.3f}])")
+        terminate = terminate | extreme_ang_vel
+    
+    # Check for extreme values in joint velocities
+    joint_vel = asset.data.joint_vel
+    if joint_vel is not None:
+        extreme_joint_vel = (torch.abs(joint_vel) > 1000.0).any(dim=-1)  # 100 rad/s is very high
+        if extreme_joint_vel.any():
+            extreme_env_ids = torch.where(extreme_joint_vel)[0]
+            for env_id in extreme_env_ids:  # Log all environments
+                joint_vel_vals = joint_vel[env_id]
+                extreme_joints = torch.where(torch.abs(joint_vel_vals) > 1000.0)[0]
+                for joint_idx in extreme_joints:  # Log all joints
+                    joint_vel_val = joint_vel_vals[joint_idx].item()
+                    problem_details.append(f"Env {env_id.item()}: Joint {joint_idx.item()} velocity {joint_vel_val:.3f} rad/s > 1000.0")
+        terminate = terminate | extreme_joint_vel
+    
+    # Log terminations due to extreme values (no frequency limiting)
+    if terminate.any():
+        num_terminated = terminate.sum().item()
+        terminated_env_ids = torch.where(terminate)[0].tolist()
+        print(f"[Extreme Values Termination] Terminating {num_terminated} environments due to extreme values.")
+        print(f"[Extreme Values Termination] Affected environment IDs: {terminated_env_ids}")
+        if problem_details:
+            print("[Extreme Values Termination] Problem details:")
+            for detail in problem_details:  # Show all problems
+                print(f"  - {detail}")
+    
+    return terminate
+
+
+
