@@ -330,7 +330,7 @@ class EventCfg:
     push_robot = EventTerm(
         func=mdp.push_by_setting_velocity,
         mode="interval",
-        interval_range_s=(5.0, 5.0),
+        interval_range_s=(2.0, 2.0),
         params={
             "asset_cfg": SceneEntityCfg("robot"),
             "velocity_range": {
@@ -348,10 +348,10 @@ class EventCfg:
     specific_velocity_push = EventTerm(
         func=push_by_setting_specific_velocity,
         mode="interval",
-        interval_range_s=(5.0, 5.0),
+        interval_range_s=(2.0, 2.0),
         params={
             "asset_cfg": SceneEntityCfg("robot"),
-            "vel_x_range": (-2.0, 2.0),  # x-direction velocity range
+            "vel_x_range": (-1.0, 1.0),  # x-direction velocity range
             "vel_y": 0.0,  # y-direction velocity (fixed)
             "vel_z": 0.0,  # z-direction velocity (fixed)
             "ang_vel_x": 0.0,  # roll (fixed)
@@ -365,10 +365,10 @@ class EventCfg:
     external_wrench_with_offset = EventTerm(
         func=apply_external_force_torque_offset,
         mode="interval",
-        interval_range_s=(5.0, 5.0),
+        interval_range_s=(1.0, 4.0),
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=[HANDLE_BODY_NAME]),
-            "force_range": (-5.0, 5.0),
+            "force_range": (-2.0, 2.0),
             "torque_range": (-1.0, 1.0),
             "position_offset": (0.0, 0.0, 0.89),  # Offset from body center of mass (x, y, z)
         },
@@ -378,13 +378,13 @@ class EventCfg:
     specific_external_wrench = EventTerm(
         func=apply_specific_external_force_torque,
         mode="interval",
-        interval_range_s=(5.0, 5.0),
+        interval_range_s=(1.0, 4.0),
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=[HANDLE_BODY_NAME]),
-            "force_x_range": (-10.0, 10.0),  # x-direction force range
+            "force_x_range": (-2.0, 2.0),  # x-direction force range
             "force_y": 0.0,  # y-direction force (fixed)
             "force_z": 0.0,  # z-direction force (fixed)
-            "torque_x_range": (-5.0, 5.0),  # x-direction torque range
+            "torque_x_range": (-1.0, 1.0),  # x-direction torque range
             "torque_y": 0.0,  # y-direction torque (fixed)
             "torque_z": 0.0,  # z-direction torque (fixed)
             "position_offset": (0.0, 0.0, 0.89),  # Adjusted offset
@@ -451,7 +451,7 @@ class RewardsCfg:
     # (0) Surviving reward - 로봇이 살아있을 때마다 보상
     is_alive = RewTerm(
         func=mdp.is_alive,
-        weight=1.0,  # reward for staying alive
+        weight=0.1,  # reward for staying alive
     )
 
     # (-1) Termination penalty - 로봇이 죽을 때 penalty
@@ -477,7 +477,7 @@ class RewardsCfg:
     # (3) BALANCE_JOINT_NAME이 default position과 비슷하도록
     hinge_pos_deviation = RewTerm(
         func=mdp.joint_deviation_l1,
-        weight=-1.0,  # penalty for deviation from default
+        weight=-5.0,  # penalty for deviation from default
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=[BALANCE_JOINT_NAME])},
     )
     
@@ -494,7 +494,7 @@ class RewardsCfg:
     # (5) 4개 wheel의 contact force 값이 최대한 비슷하도록 (variance 기반)
     wheel_contact_balance = RewTerm(
         func=wheel_contact_force_variance,
-        weight=1.0,  # reward for balanced contact forces
+        weight=3.0,  # reward for balanced contact forces
         params={"sensor_cfg": SceneEntityCfg("wheel_contact_forces", body_names=WHEEL_BODIES_REGEX)},
     )
     
@@ -516,7 +516,7 @@ class TerminationsCfg:
 
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
     # Terminate on large tilt
-    bad_orientation = DoneTerm(func=mdp.bad_orientation, params={"limit_angle": 0.6})
+    bad_orientation = DoneTerm(func=mdp.bad_orientation, params={"limit_angle": 1.0})
 
 
 @configclass
