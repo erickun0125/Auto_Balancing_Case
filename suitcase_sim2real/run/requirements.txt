@@ -1,0 +1,18 @@
+# Auto Balancing Case Sim2Real Requirements
+
+# Core dependencies
+torch>=1.9.0
+numpy>=1.21.0
+pyyaml>=5.4.0
+
+# Hardware interfaces
+dynamixel-sdk>=3.7.0
+
+# Raspberry Pi dependencies (only needed on Raspberry Pi)
+# RPi.GPIO>=0.7.0
+# hx711>=1.0.0
+
+# Optional dependencies for development
+# matplotlib>=3.5.0  # for plotting and visualization
+# opencv-python>=4.5.0  # for camera integration (future)
+# scipy>=1.7.0  # for signal processing

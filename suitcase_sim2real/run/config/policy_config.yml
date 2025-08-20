@@ -1,0 +1,96 @@
+# Auto Balancing Case Sim2Real 설정 파일
+# 실제 하드웨어에 맞게 수정하여 사용하세요
+
+# RL Policy 설정
+policy:
+  # Isaac Lab RSL-RL 체크포인트 파일 경로 (실제 경로로 수정 필요)
+  model_path: "/path/to/your/rsl_rl_checkpoint.pt"
+  # 제어 주파수 (Hz) - IsaacLab 환경과 동일하게 설정 (decimation=4, dt=0.005 -> 50Hz)
+  control_frequency: 50.0
+  # 연산 장치 (cpu 또는 cuda)
+  device: "cpu"
+
+# 하드웨어 설정
+hardware:
+  # Dynamixel 모터 설정
+  motor:
+    # 모터 ID (밸런싱 조인트)
+    id: 1
+    # 시리얼 장치 (Linux: /dev/ttyUSB0, Windows: COM3)
+    device: "/dev/ttyUSB0"
+    # 통신 속도
+    baudrate: 57600
+
+  # HX711 Load Cell 설정 (실제 GPIO 핀 번호로 수정 필요)
+  # IsaacLab USD 파일의 바퀴 순서와 일치: FR, RR, FL, RL
+  load_cells:
+    # 오른쪽 앞 바퀴 (Front Right)  
+    - name: "wheel_FR"
+      dout_pin: 5
+      pd_sck_pin: 6
+      calibration_factor: 1.0
+    
+    # 오른쪽 뒤 바퀴 (Rear Right)
+    - name: "wheel_RR"
+      dout_pin: 13
+      pd_sck_pin: 19
+      calibration_factor: 1.0
+    
+    # 왼쪽 앞 바퀴 (Front Left)
+    - name: "wheel_FL"
+      dout_pin: 16
+      pd_sck_pin: 20
+      calibration_factor: 1.0
+    
+    # 왼쪽 뒤 바퀴 (Rear Left)
+    - name: "wheel_RL"
+      dout_pin: 21
+      pd_sck_pin: 26
+      calibration_factor: 1.0
+    
+    # 손잡이
+    - name: "handle"
+      dout_pin: 12
+      pd_sck_pin: 25
+      calibration_factor: 1.0
+
+# Observation 설정
+observation:
+  # History 길이 (IsaacLab 환경의 OBS_HISTORY_LENGTH와 동일)
+  history_length: 4
+
+# 정규화 파라미터 (IsaacLab 환경과 동일하게 설정)
+normalization:
+  # 바퀴 힘 최대값 (N)
+  max_wheel_force: 50.0
+  # 손잡이 힘 최대값 (N)  
+  max_handle_force: 20.0
+  # 조인트 각도 최대값 (rad) - IsaacLab에서 clip 범위 0.5와 동일
+  max_joint_angle: 0.5
+  # 조인트 각속도 최대값 (rad/s)
+  max_joint_velocity: 6.0
+
+# 안전 설정
+safety:
+  # 최대 에피소드 스텝 수 (50Hz * 8초 = 400, IsaacLab과 일치)
+  max_episode_steps: 400
+  # 비상 정지 각도 한계 (rad)
+  emergency_angle_limit: 0.4
+
+# 추가 설정 (선택사항)
+logging:
+  # 로그 레벨
+  level: "INFO"
+  # 로그 파일 저장 여부
+  save_to_file: false
+  # 로그 파일 경로
+  log_file: "logs/auto_balancing_case.log"
+
+# 디버깅 설정
+debug:
+  # 상세 출력 여부
+  verbose: true
+  # 관측값 출력 주기 (스텝 수)
+  print_obs_interval: 25
+  # 하드웨어 상태 모니터링 주기 (스텝 수)  
+  hardware_monitor_interval: 50
