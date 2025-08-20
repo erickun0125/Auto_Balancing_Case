@@ -8,7 +8,33 @@ import torch
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.sensors.contact_sensor import ContactSensor
 
+# Global variables to track external force history
+_external_force_history = {}
+
 # observation functions
+
+def get_external_force_magnitude(env, asset_cfg: SceneEntityCfg) -> torch.Tensor:
+    """Get the magnitude of external force applied to the handle body.
+    
+    This function returns the magnitude of external forces that were applied
+    through external force events.
+    
+    Args:
+        env: The environment instance
+        asset_cfg: SceneEntityCfg for the asset
+        
+    Returns:
+        External force magnitude for handle body, shape (num_envs, 1)
+    """
+    global _external_force_history
+    
+    # Initialize history if not exists
+    if 'handle_force' not in _external_force_history:
+        _external_force_history['handle_force'] = torch.zeros(env.num_envs, 1, device=env.device)
+    
+    return _external_force_history['handle_force']
+
+
 
 def wheel_contact_force_magnitude(env, sensor_cfg: SceneEntityCfg) -> torch.Tensor:
     """Contact force magnitude for wheel bodies.
@@ -160,6 +186,13 @@ def apply_external_force_torque_offset(
     forces = torch.rand(size, device=asset.device) * (force_range[1] - force_range[0]) + force_range[0]
     torques = torch.rand(size, device=asset.device) * (torque_range[1] - torque_range[0]) + torque_range[0]
     
+    # Calculate force magnitude for history tracking
+    force_magnitude = torch.norm(forces, dim=-1)  # (N, B)
+    total_force_magnitude = torch.mean(force_magnitude, dim=1, keepdim=True)  # (N, 1)
+    
+    # Update external force history
+    update_external_force_history(env_ids, total_force_magnitude)
+    
     # Convert position offset to tensor
     position_offset_tensor = torch.tensor(position_offset, device=asset.device, dtype=torch.float32)
     position_offset_tensor = position_offset_tensor.unsqueeze(0).unsqueeze(0)  # (1, 1, 3)
@@ -234,6 +267,13 @@ def apply_specific_external_force_torque(
     forces[:, :, 2] = force_z
     torques[:, :, 1] = torque_y
     torques[:, :, 2] = torque_z
+    
+    # Calculate force magnitude for history tracking
+    force_magnitude = torch.norm(forces, dim=-1)  # (N, B)
+    total_force_magnitude = torch.mean(force_magnitude, dim=1, keepdim=True)  # (N, 1)
+    
+    # Update external force history
+    update_external_force_history(env_ids, total_force_magnitude)
     
     # Convert position offset to tensor
     position_offset_tensor = torch.tensor(position_offset, device=asset.device, dtype=torch.float32)
@@ -344,3 +384,41 @@ def clear_external_force_torque(
         body_ids=asset_cfg.body_ids, 
         env_ids=env_ids
     )
+
+
+def update_external_force_history(env_ids, force_magnitude):
+    """Update the external force history with new applied force.
+    
+    Args:
+        env_ids: Environment IDs where force was applied
+        force_magnitude: Magnitude of the applied force
+    """
+    global _external_force_history
+    
+    if 'handle_force' not in _external_force_history:
+        return
+    
+    # Update the history for the specified environments
+    if isinstance(env_ids, torch.Tensor):
+        _external_force_history['handle_force'][env_ids] = force_magnitude
+    else:
+        _external_force_history['handle_force'][env_ids] = force_magnitude
+
+def reset_external_force_history(env_ids=None):
+    """Reset external force history for specified environments or all.
+    
+    Args:
+        env_ids: Environment IDs to reset (None for all)
+    """
+    global _external_force_history
+    
+    if 'handle_force' not in _external_force_history:
+        return
+    
+    if env_ids is None:
+        _external_force_history['handle_force'].zero_()
+    else:
+        if isinstance(env_ids, torch.Tensor):
+            _external_force_history['handle_force'][env_ids].zero_()
+        else:
+            _external_force_history['handle_force'][env_ids].zero_()

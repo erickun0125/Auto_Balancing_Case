@@ -29,11 +29,13 @@ from isaaclab.actuators import ImplicitActuatorCfg
 from .mdp_for_ABC import (
     wheel_contact_force_magnitude, 
     handle_contact_force_magnitude, 
+    handle_external_force_magnitude,
     wheel_contact_force_variance,
     wheel_contact_force_min_max,
     apply_external_force_torque_offset,
     apply_specific_external_force_torque,
-    push_by_setting_specific_velocity
+    push_by_setting_specific_velocity,
+    reset_external_force_history
 )
 
 import torch
@@ -142,8 +144,8 @@ SUITECASE_CFG = ArticulationCfg(
     actuators={
         "balance_hinge": ImplicitActuatorCfg(
             joint_names_expr=[BALANCE_JOINT_NAME],
-            stiffness=10.0,
-            damping=1.0,
+            stiffness=20.0,
+            damping=2.0,
             effort_limit_sim=3.0,
             velocity_limit_sim=6,
         )
@@ -232,10 +234,10 @@ class ObservationsCfg:
             history_length=OBS_HISTORY_LENGTH,
         )
         
-        # Contact force magnitude for handle
-        handle_contact_forces = ObsTerm(
-            func=handle_contact_force_magnitude,
-            params={"sensor_cfg": SceneEntityCfg("handle_contact_forces", body_names=[HANDLE_BODY_NAME])},
+        # External force magnitude applied to handle through events
+        handle_external_force = ObsTerm(
+            func=handle_external_force_magnitude,
+            params={"asset_cfg": SceneEntityCfg("robot", body_names=[HANDLE_BODY_NAME])},
             noise=Unoise(n_min=-0.01, n_max=0.01),
             history_length=OBS_HISTORY_LENGTH,
         )
@@ -254,13 +256,11 @@ class ObservationsCfg:
         joint_pos = ObsTerm(
             func=mdp.joint_pos_rel,
             params={"asset_cfg": SceneEntityCfg("robot", joint_names=[BALANCE_JOINT_NAME])},
-            noise=Unoise(n_min=-0.005, n_max=0.005),
             history_length=OBS_HISTORY_LENGTH,
         )
         joint_vel = ObsTerm(
             func=mdp.joint_vel_rel,
             params={"asset_cfg": SceneEntityCfg("robot", joint_names=[BALANCE_JOINT_NAME])},
-            noise=Unoise(n_min=-0.1, n_max=0.1),
             history_length=OBS_HISTORY_LENGTH,
         )
         prev_action = ObsTerm(func=mdp.last_action, params={"action_name": "hinge_pos"}, history_length=OBS_HISTORY_LENGTH)
@@ -269,15 +269,13 @@ class ObservationsCfg:
         wheel_contact_forces = ObsTerm(
             func=wheel_contact_force_magnitude,
             params={"sensor_cfg": SceneEntityCfg("wheel_contact_forces", body_names=WHEEL_BODIES_REGEX)},
-            noise=Unoise(n_min=-0.01, n_max=0.01),
             history_length=OBS_HISTORY_LENGTH,
         )
         
-        # Contact force magnitude for handle
-        handle_contact_forces = ObsTerm(
-            func=handle_contact_force_magnitude,
-            params={"sensor_cfg": SceneEntityCfg("handle_contact_forces", body_names=[HANDLE_BODY_NAME])},
-            noise=Unoise(n_min=-0.01, n_max=0.01),
+        # External force magnitude applied to handle through events
+        handle_external_force = ObsTerm(
+            func=handle_external_force_magnitude,
+            params={"asset_cfg": SceneEntityCfg("robot", body_names=[HANDLE_BODY_NAME])},
             history_length=OBS_HISTORY_LENGTH,
         )
 
@@ -323,6 +321,13 @@ class EventCfg:
             "position_range": (-0.1, 0.1),
             "velocity_range": (-0.0, 0.0),
         },
+    )
+    
+    # Reset external force history on episode reset
+    reset_external_force = EventTerm(
+        func=reset_external_force_history,
+        mode="reset",
+        params={},
     )
 
     
