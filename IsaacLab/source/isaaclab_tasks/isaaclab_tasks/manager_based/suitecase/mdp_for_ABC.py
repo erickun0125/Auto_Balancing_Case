@@ -13,7 +13,7 @@ _external_force_history = {}
 
 # observation functions
 
-def get_external_force_magnitude(env, asset_cfg: SceneEntityCfg) -> torch.Tensor:
+def handle_external_force_magnitude(env, asset_cfg: SceneEntityCfg) -> torch.Tensor:
     """Get the magnitude of external force applied to the handle body.
     
     This function returns the magnitude of external forces that were applied
@@ -404,10 +404,11 @@ def update_external_force_history(env_ids, force_magnitude):
     else:
         _external_force_history['handle_force'][env_ids] = force_magnitude
 
-def reset_external_force_history(env_ids=None):
+def reset_external_force_history(env, env_ids=None):
     """Reset external force history for specified environments or all.
     
     Args:
+        env: The environment instance
         env_ids: Environment IDs to reset (None for all)
     """
     global _external_force_history
