@@ -25,13 +25,14 @@ class AutoBalancingCaseConfig:
     control_frequency: float = 50.0  # Hz (IsaacLab decimation=4, dt=0.005 -> 50Hz)
     device: str = "cpu"
     
-    # Hardware 설정
-    motor_id: int = 1
+    # Hardware 설정 - Dual Motors
+    motor_ids: List[int] = None  # [1, 2] - 듀얼 모터 ID
     motor_device: str = '/dev/ttyUSB0'
     motor_baudrate: int = 57600
     
-    # Load cell 설정 (GPIO 핀 번호는 실제 하드웨어에 맞춰 수정)
-    load_cell_configs: List[Dict] = None
+    # Load cell 설정 - Arduino 기반
+    arduino_port: str = '/dev/ttyACM0'
+    arduino_baudrate: int = 115200
     
     # Observation history 설정 (IsaacLab에서 사용하는 history length)
     obs_history_length: int = 4
@@ -74,27 +75,22 @@ class AutoBalancingCaseBridge:
         
     def _initialize_hardware(self):
         """하드웨어 인터페이스 초기화"""
-        # Dynamixel 모터 초기화
+        # Dynamixel 듀얼 모터 초기화
+        if self.config.motor_ids is None:
+            self.config.motor_ids = [1, 2]  # 기본값: 모터 ID 1, 2
+            
         self.motor_interface = DynamixelXL430Interface(
-            motor_id=self.config.motor_id,
+            motor_ids=self.config.motor_ids,
             device_name=self.config.motor_device,
             baudrate=self.config.motor_baudrate,
             control_mode=DynamixelXL430Interface.POSITION_CONTROL_MODE
         )
         
-        # Load cell 초기화
-        if self.config.load_cell_configs is None:
-            # 기본 설정 (실제 GPIO 핀에 맞춰 수정 필요)
-            # IsaacLab USD 파일의 바퀴 순서와 일치: FR, RR, FL, RL
-            self.config.load_cell_configs = [
-                {'name': 'wheel_FR', 'dout_pin': 5, 'pd_sck_pin': 6, 'calibration_factor': 1.0},
-                {'name': 'wheel_RR', 'dout_pin': 13, 'pd_sck_pin': 19, 'calibration_factor': 1.0},
-                {'name': 'wheel_FL', 'dout_pin': 16, 'pd_sck_pin': 20, 'calibration_factor': 1.0},
-                {'name': 'wheel_RL', 'dout_pin': 21, 'pd_sck_pin': 26, 'calibration_factor': 1.0},
-                {'name': 'handle', 'dout_pin': 12, 'pd_sck_pin': 25, 'calibration_factor': 1.0}
-            ]
-        
-        self.load_cell_interface = HX711LoadCellInterface(self.config.load_cell_configs)
+        # Arduino 기반 Load cell 초기화
+        self.load_cell_interface = HX711LoadCellInterface(
+            arduino_port=self.config.arduino_port,
+            baudrate=self.config.arduino_baudrate
+        )
         
         # 캘리브레이션 데이터 로드 시도
         try:
@@ -509,7 +505,8 @@ if __name__ == "__main__":
         model_path="path/to/your/rsl_rl_checkpoint.pt",  # 실제 경로로 변경
         control_frequency=50.0,
         device="cpu",
-        motor_id=1,
+        motor_ids=[1, 2],  # 듀얼 모터
+        arduino_port="/dev/ttyACM0",  # Arduino 포트
         obs_history_length=4,
         max_episode_steps=1600
     )

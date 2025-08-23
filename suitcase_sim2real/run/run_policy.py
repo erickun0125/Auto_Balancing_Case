@@ -27,13 +27,14 @@ def load_config(config_path: str) -> AutoBalancingCaseConfig:
         control_frequency=config_dict['policy'].get('control_frequency', 50.0),
         device=config_dict['policy'].get('device', 'cpu'),
         
-        # Hardware 설정
-        motor_id=config_dict['hardware']['motor']['id'],
+        # Hardware 설정 - Dual Motors
+        motor_ids=config_dict['hardware']['motor']['ids'],
         motor_device=config_dict['hardware']['motor']['device'],
         motor_baudrate=config_dict['hardware']['motor']['baudrate'],
         
-        # Load cell 설정
-        load_cell_configs=config_dict['hardware']['load_cells'],
+        # Load cell 설정 - Arduino
+        arduino_port=config_dict['hardware']['arduino']['port'],
+        arduino_baudrate=config_dict['hardware']['arduino']['baudrate'],
         
         # Observation 설정
         obs_history_length=config_dict['observation']['history_length'],
@@ -61,17 +62,14 @@ def create_default_config(config_path: str):
         },
         'hardware': {
             'motor': {
-                'id': 1,
+                'ids': [1, 2],  # 듀얼 모터 ID
                 'device': '/dev/ttyUSB0',
                 'baudrate': 57600
             },
-            'load_cells': [
-                {'name': 'wheel_FR', 'dout_pin': 5, 'pd_sck_pin': 6, 'calibration_factor': 1.0},
-                {'name': 'wheel_RR', 'dout_pin': 13, 'pd_sck_pin': 19, 'calibration_factor': 1.0},
-                {'name': 'wheel_FL', 'dout_pin': 16, 'pd_sck_pin': 20, 'calibration_factor': 1.0},
-                {'name': 'wheel_RL', 'dout_pin': 21, 'pd_sck_pin': 26, 'calibration_factor': 1.0},
-                {'name': 'handle', 'dout_pin': 12, 'pd_sck_pin': 25, 'calibration_factor': 1.0}
-            ]
+            'arduino': {
+                'port': '/dev/ttyACM0',  # Arduino 포트
+                'baudrate': 115200
+            }
         },
         'observation': {
             'history_length': 4

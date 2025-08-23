@@ -1,67 +1,52 @@
 #!/usr/bin/env python3
 """
-HX711 Load Cell Interface for Auto Balancing Case
-HX711을 통해 바퀴 4개와 손잡이의 load cell 데이터를 읽는 인터페이스
+HX711 Load Cell Interface for Auto Balancing Case (Arduino-based)
+Arduino를 통해 바퀴 4개와 손잡이의 load cell 데이터를 읽는 인터페이스
 """
 
 import numpy as np
 import time
 import threading
+import json
 from typing import Dict, List, Optional, Tuple
 try:
-    import RPi.GPIO as GPIO
-    from hx711 import HX711
-    HX711_AVAILABLE = True
+    import serial
+    SERIAL_AVAILABLE = True
 except ImportError:
-    print("Warning: RPi.GPIO or hx711 not installed. Install with: pip install RPi.GPIO hx711")
-    print("Mock mode enabled for development without Raspberry Pi hardware")
-    HX711_AVAILABLE = False
+    print("Warning: pyserial not installed. Install with: pip install pyserial")
+    print("Mock mode enabled for development without Arduino hardware")
+    SERIAL_AVAILABLE = False
     
-    # Mock classes for development without hardware
-    class GPIO:
-        BCM = 'BCM'
-        @staticmethod
-        def setmode(mode): pass
-        @staticmethod
-        def cleanup(): pass
-    
-    class HX711:
-        def __init__(self, dout, pd_sck): pass
-        def set_reading_format(self, f1, f2): pass
-        def set_reference_unit(self, unit): pass
-        def reset(self): pass
-        def tare(self): pass
-        def get_value(self, times=1): return 0.0
-        def power_down(self): pass
+    # Mock class for development without hardware
+    class serial:
+        class Serial:
+            def __init__(self, port, baudrate, timeout=1): 
+                self.is_open = True
+            def close(self): pass
+            def readline(self): return b'{"wheel_FR":0.0,"wheel_RR":0.0,"wheel_FL":0.0,"wheel_RL":0.0,"handle":0.0}\n'
+            def write(self, data): pass
+            def flush(self): pass
 
 class HX711LoadCellInterface:
-    """HX711을 사용하여 여러 load cell의 데이터를 실시간으로 읽는 인터페이스"""
+    """Arduino를 통해 HX711 load cell 데이터를 실시간으로 읽는 인터페이스"""
     
-    def __init__(self, load_cell_configs: List[Dict]):
+    def __init__(self, arduino_port: str = '/dev/ttyACM0', baudrate: int = 115200):
         """
         Args:
-            load_cell_configs: load cell 설정 리스트
-                예: [
-                    {'name': 'wheel_FL', 'dout_pin': 5, 'pd_sck_pin': 6, 'calibration_factor': 1.0},
-                    {'name': 'wheel_FR', 'dout_pin': 13, 'pd_sck_pin': 19, 'calibration_factor': 1.0},
-                    {'name': 'wheel_RL', 'dout_pin': 16, 'pd_sck_pin': 20, 'calibration_factor': 1.0},
-                    {'name': 'wheel_RR', 'dout_pin': 21, 'pd_sck_pin': 26, 'calibration_factor': 1.0},
-                    {'name': 'handle', 'dout_pin': 12, 'pd_sck_pin': 25, 'calibration_factor': 1.0}
-                ]
+            arduino_port: Arduino 시리얼 포트 (Linux: /dev/ttyACM0, Windows: COM3)
+            baudrate: 시리얼 통신 속도
         """
-        self.load_cell_configs = load_cell_configs
-        self.num_load_cells = len(load_cell_configs)
+        self.arduino_port = arduino_port
+        self.baudrate = baudrate
         
-        # GPIO 설정
-        GPIO.setmode(GPIO.BCM)
+        # 시리얼 연결 초기화
+        self.serial_connection = None
+        self._initialize_serial_connection()
         
-        # HX711 인스턴스들 초기화
-        self.hx711_instances = {}
-        self._initialize_load_cells()
-        
-        # 현재 읽기 값들
-        self.current_forces = {config['name']: 0.0 for config in load_cell_configs}
-        self.calibrated_forces = {config['name']: 0.0 for config in load_cell_configs}
+        # 현재 읽기 값들 (Arduino에서 받을 load cell 이름들)
+        self.load_cell_names = ['wheel_FR', 'wheel_RR', 'wheel_FL', 'wheel_RL', 'handle']
+        self.current_forces = {name: 0.0 for name in self.load_cell_names}
+        self.calibrated_forces = {name: 0.0 for name in self.load_cell_names}
         
         # 실시간 읽기를 위한 변수들
         self.is_reading = False
@@ -69,41 +54,33 @@ class HX711LoadCellInterface:
         self.read_frequency = 50  # Hz
         
         # 캘리브레이션을 위한 변수들
-        self.zero_offsets = {config['name']: 0.0 for config in load_cell_configs}
-        self.calibration_factors = {config['name']: config.get('calibration_factor', 1.0) 
-                                  for config in load_cell_configs}
+        self.zero_offsets = {name: 0.0 for name in self.load_cell_names}
+        self.calibration_factors = {name: 1.0 for name in self.load_cell_names}
         
-    def _initialize_load_cells(self):
-        """모든 load cell HX711 인스턴스 초기화"""
-        if not HX711_AVAILABLE:
-            print("Mock mode: Creating mock HX711 instances")
-            for config in self.load_cell_configs:
-                name = config['name']
-                self.hx711_instances[name] = HX711(0, 0)  # Mock instance
-                print(f"Mock load cell '{name}' 초기화 완료")
+    def _initialize_serial_connection(self):
+        """Arduino와의 시리얼 연결 초기화"""
+        if not SERIAL_AVAILABLE:
+            print("Mock mode: Creating mock serial connection")
+            self.serial_connection = serial.Serial(self.arduino_port, self.baudrate)
+            print("Mock Arduino 연결 완료")
             return
         
-        for config in self.load_cell_configs:
-            name = config['name']
-            dout_pin = config['dout_pin']
-            pd_sck_pin = config['pd_sck_pin']
+        try:
+            self.serial_connection = serial.Serial(
+                port=self.arduino_port,
+                baudrate=self.baudrate,
+                timeout=1
+            )
+            time.sleep(2)  # Arduino 초기화 대기
+            print(f"Arduino 연결 성공: {self.arduino_port} @ {self.baudrate} baud")
             
-            try:
-                hx = HX711(dout_pin, pd_sck_pin)
-                hx.set_reading_format("MSB", "MSB")
-                hx.set_reference_unit(1)  # 기본 참조 단위
-                hx.reset()
-                hx.tare()  # 영점 조정
-                
-                self.hx711_instances[name] = hx
-                print(f"Load cell '{name}' 초기화 완료 (DOUT: {dout_pin}, PD_SCK: {pd_sck_pin})")
-                
-            except Exception as e:
-                print(f"Load cell '{name}' 초기화 실패: {e}")
-                self.hx711_instances[name] = None
+        except Exception as e:
+            print(f"Arduino 연결 실패: {e}")
+            print("Mock mode로 전환합니다.")
+            self.serial_connection = serial.Serial(self.arduino_port, self.baudrate)  # Mock
     
     def calibrate_all_load_cells(self, known_weight: float = 1000.0):
-        """모든 load cell 캘리브레이션 수행
+        """Arduino를 통해 모든 load cell 캘리브레이션 수행
         
         Args:
             known_weight: 알려진 무게 (그램 단위)
@@ -112,32 +89,41 @@ class HX711LoadCellInterface:
         print("모든 load cell에 무게를 제거하고 5초 기다려주세요...")
         time.sleep(5)
         
-        # 영점 조정
-        for name, hx in self.hx711_instances.items():
-            if hx is not None:
-                hx.tare()
-                self.zero_offsets[name] = 0.0
-                print(f"'{name}' 영점 조정 완료")
+        # Arduino에 영점 조정 명령 전송
+        self._send_command("TARE_ALL")
+        time.sleep(2)
+        
+        # 영점 값 초기화
+        for name in self.load_cell_names:
+            self.zero_offsets[name] = 0.0
+        print("모든 load cell 영점 조정 완료")
         
         print(f"\n이제 각 load cell에 {known_weight}g의 무게를 올려주세요...")
         input("준비되면 Enter를 눌러주세요...")
         
         # 캘리브레이션 값 측정
-        for name, hx in self.hx711_instances.items():
-            if hx is not None:
-                print(f"'{name}' 캘리브레이션 중...")
-                readings = []
-                for _ in range(10):  # 10회 측정
-                    val = hx.get_value(5)  # 5회 평균
-                    readings.append(val)
-                    time.sleep(0.1)
-                
-                avg_reading = np.mean(readings)
+        print("캘리브레이션 값 측정 중...")
+        readings = {name: [] for name in self.load_cell_names}
+        
+        for _ in range(10):  # 10회 측정
+            data = self._read_sensor_data()
+            if data:
+                for name in self.load_cell_names:
+                    if name in data:
+                        readings[name].append(data[name])
+            time.sleep(0.1)
+        
+        # 캘리브레이션 계수 계산
+        for name in self.load_cell_names:
+            if readings[name]:
+                avg_reading = np.mean(readings[name])
                 if avg_reading != 0:
                     self.calibration_factors[name] = avg_reading / known_weight
                     print(f"'{name}' 캘리브레이션 계수: {self.calibration_factors[name]:.6f}")
                 else:
                     print(f"'{name}' 캘리브레이션 실패 - 0 값")
+            else:
+                print(f"'{name}' 캘리브레이션 실패 - 데이터 없음")
         
         print("캘리브레이션 완료!")
     
@@ -164,25 +150,32 @@ class HX711LoadCellInterface:
         while self.is_reading:
             start_time = time.time()
             
-            # 모든 load cell에서 데이터 읽기
-            for name, hx in self.hx711_instances.items():
-                if hx is not None:
-                    try:
-                        # raw 값 읽기
-                        raw_value = hx.get_value(1)  # 1회 측정으로 빠른 읽기
-                        self.current_forces[name] = raw_value
-                        
-                        # 캘리브레이션 적용
-                        if self.calibration_factors[name] != 0:
-                            calibrated_value = (raw_value - self.zero_offsets[name]) / self.calibration_factors[name]
-                            self.calibrated_forces[name] = calibrated_value
+            # Arduino에서 센서 데이터 읽기
+            try:
+                data = self._read_sensor_data()
+                if data:
+                    # raw 값 업데이트
+                    for name in self.load_cell_names:
+                        if name in data:
+                            raw_value = data[name]
+                            self.current_forces[name] = raw_value
+                            
+                            # 캘리브레이션 적용
+                            if self.calibration_factors[name] != 0:
+                                calibrated_value = (raw_value - self.zero_offsets[name]) / self.calibration_factors[name]
+                                self.calibrated_forces[name] = calibrated_value
+                            else:
+                                self.calibrated_forces[name] = 0.0
                         else:
+                            self.current_forces[name] = 0.0
                             self.calibrated_forces[name] = 0.0
                             
-                    except Exception as e:
-                        print(f"Load cell '{name}' 읽기 오류: {e}")
-                        self.current_forces[name] = 0.0
-                        self.calibrated_forces[name] = 0.0
+            except Exception as e:
+                print(f"Arduino 데이터 읽기 오류: {e}")
+                # 오류 시 모든 값을 0으로 설정
+                for name in self.load_cell_names:
+                    self.current_forces[name] = 0.0
+                    self.calibrated_forces[name] = 0.0
             
             # 주기 유지
             elapsed = time.time() - start_time
@@ -257,33 +250,53 @@ class HX711LoadCellInterface:
         except Exception as e:
             print(f"캘리브레이션 로드 오류: {e}")
     
+    def _send_command(self, command: str):
+        """Arduino에 명령 전송"""
+        if self.serial_connection and self.serial_connection.is_open:
+            try:
+                self.serial_connection.write(f"{command}\n".encode())
+                self.serial_connection.flush()
+            except Exception as e:
+                print(f"Arduino 명령 전송 오류: {e}")
+    
+    def _read_sensor_data(self) -> Optional[Dict[str, float]]:
+        """Arduino에서 센서 데이터 읽기"""
+        if not self.serial_connection or not self.serial_connection.is_open:
+            return None
+        
+        try:
+            line = self.serial_connection.readline().decode().strip()
+            if line:
+                # JSON 형태로 데이터 파싱
+                # 예상 형태: {"wheel_FR":123.45,"wheel_RR":67.89,"wheel_FL":234.56,"wheel_RL":78.90,"handle":12.34}
+                data = json.loads(line)
+                return data
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            print(f"Arduino 데이터 파싱 오류: {e}")
+        except Exception as e:
+            print(f"Arduino 데이터 읽기 오류: {e}")
+        
+        return None
+    
     def shutdown(self):
         """정리 및 종료"""
         self.stop_real_time_reading()
         
-        # GPIO 정리
-        for hx in self.hx711_instances.values():
-            if hx is not None:
-                hx.power_down()
+        # 시리얼 연결 종료
+        if self.serial_connection and self.serial_connection.is_open:
+            self.serial_connection.close()
         
-        GPIO.cleanup()
-        print("HX711 Load Cell 인터페이스 종료")
+        print("HX711 Load Cell Arduino 인터페이스 종료")
 
 
 # 사용 예제
 if __name__ == "__main__":
-    # Load cell 설정 (실제 GPIO 핀 번호에 맞춰 수정 필요)
-    # IsaacLab USD 파일의 바퀴 순서와 일치: FR, RR, FL, RL
-    load_cell_configs = [
-        {'name': 'wheel_FR', 'dout_pin': 5, 'pd_sck_pin': 6, 'calibration_factor': 1.0},
-        {'name': 'wheel_RR', 'dout_pin': 13, 'pd_sck_pin': 19, 'calibration_factor': 1.0},
-        {'name': 'wheel_FL', 'dout_pin': 16, 'pd_sck_pin': 20, 'calibration_factor': 1.0},
-        {'name': 'wheel_RL', 'dout_pin': 21, 'pd_sck_pin': 26, 'calibration_factor': 1.0},
-        {'name': 'handle', 'dout_pin': 12, 'pd_sck_pin': 25, 'calibration_factor': 1.0}
-    ]
-    
-    # Load cell 인터페이스 초기화
-    load_cell_interface = HX711LoadCellInterface(load_cell_configs)
+    # Arduino 기반 Load cell 인터페이스 초기화
+    load_cell_interface = HX711LoadCellInterface(
+        arduino_port='/dev/ttyACM0',  # Linux
+        # arduino_port='COM3',        # Windows
+        baudrate=115200
+    )
     
     try:
         # 캘리브레이션 수행 (선택사항)
