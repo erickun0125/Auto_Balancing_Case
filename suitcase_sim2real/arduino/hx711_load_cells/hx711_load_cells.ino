@@ -17,7 +17,8 @@ HX711 scale_wheel_FR;
 HX711 scale_wheel_RR;  
 HX711 scale_wheel_FL;
 HX711 scale_wheel_RL;
-HX711 scale_handle;
+HX711 scale_handle_1;
+HX711 scale_handle_2;
 
 // Pin definitions
 const int DOUT_FR = 2, SCK_FR = 3;
@@ -25,13 +26,16 @@ const int DOUT_RR = 4, SCK_RR = 5;
 const int DOUT_FL = 6, SCK_FL = 7;
 const int DOUT_RL = 8, SCK_RL = 9;
 const int DOUT_HANDLE = 10, SCK_HANDLE = 11;
+const int DOUT_HANDLE_2 = 12, SCK_HANDLE_2 = 13;
 
 // Calibration factors (adjust these based on your load cells)
 float calibration_factor_FR = 1.0;
 float calibration_factor_RR = 1.0;
 float calibration_factor_FL = 1.0;
 float calibration_factor_RL = 1.0;
-float calibration_factor_handle = 1.0;
+float calibration_factor_handle_1 = 1.0;
+float calibration_factor_handle_2 = 1.0;
+
 
 // Data reading frequency
 const unsigned long READ_INTERVAL = 20; // 50Hz (20ms)
@@ -45,15 +49,17 @@ void setup() {
   scale_wheel_RR.begin(DOUT_RR, SCK_RR);
   scale_wheel_FL.begin(DOUT_FL, SCK_FL);
   scale_wheel_RL.begin(DOUT_RL, SCK_RL);
-  scale_handle.begin(DOUT_HANDLE, SCK_HANDLE);
+  scale_handle_1.begin(DOUT_HANDLE, SCK_HANDLE);
+  scale_handle_2.begin(DOUT_HANDLE_2, SCK_HANDLE_2);
   
   // Set calibration factors
   scale_wheel_FR.set_scale(calibration_factor_FR);
   scale_wheel_RR.set_scale(calibration_factor_RR);
   scale_wheel_FL.set_scale(calibration_factor_FL);
   scale_wheel_RL.set_scale(calibration_factor_RL);
-  scale_handle.set_scale(calibration_factor_handle);
-  
+  scale_handle_1.set_scale(calibration_factor_handle_1);
+  scale_handle_2.set_scale(calibration_factor_handle_2);
+
   // Tare all scales
   tareAllScales();
   
@@ -83,7 +89,8 @@ void sendSensorData() {
   float force_RR = scale_wheel_RR.get_units(1);
   float force_FL = scale_wheel_FL.get_units(1);
   float force_RL = scale_wheel_RL.get_units(1);
-  float force_handle = scale_handle.get_units(1);
+  float force_handle_1 = scale_handle_1.get_units(1);
+  float force_handle_2 = scale_handle_2.get_units(1);
   
   // Send as JSON format
   Serial.print("{\"wheel_FR\":");
@@ -94,8 +101,10 @@ void sendSensorData() {
   Serial.print(force_FL, 2);
   Serial.print(",\"wheel_RL\":");
   Serial.print(force_RL, 2);
-  Serial.print(",\"handle\":");
-  Serial.print(force_handle, 2);
+  Serial.print(",\"handle_1\":");
+  Serial.print(force_handle_1, 2);
+  Serial.print(",\"handle_2\":");
+  Serial.print(force_handle_2, 2);
   Serial.println("}");
 }
 
@@ -128,10 +137,16 @@ void handleCommand(String command) {
     scale_wheel_RL.set_scale(cal);
     Serial.println("RL calibration factor set to " + String(cal));
   }
-  else if (command.startsWith("SET_CAL_HANDLE ")) {
+  else if (command.startsWith("SET_CAL_HANDLE_1 ")) {
     float cal = command.substring(15).toFloat();
-    calibration_factor_handle = cal;
-    scale_handle.set_scale(cal);
+    calibration_factor_handle_1 = cal;
+    scale_handle_1.set_scale(cal);
+    Serial.println("Handle calibration factor set to " + String(cal));
+  }
+  else if (command.startsWith("SET_CAL_HANDLE_2 ")) {
+    float cal = command.substring(15).toFloat();
+    calibration_factor_handle_2 = cal;
+    scale_handle_2.set_scale(cal);
     Serial.println("Handle calibration factor set to " + String(cal));
   }
   else if (command == "GET_RAW") {
@@ -144,8 +159,10 @@ void handleCommand(String command) {
     Serial.print(scale_wheel_FL.read());
     Serial.print(" RL:");
     Serial.print(scale_wheel_RL.read());
-    Serial.print(" Handle:");
-    Serial.println(scale_handle.read());
+    Serial.print(" Handle_1:");
+    Serial.println(scale_handle_1.read());
+    Serial.print(" Handle_2:");
+    Serial.println(scale_handle_2.read());
   }
   else {
     Serial.println("Unknown command: " + command);
@@ -157,5 +174,6 @@ void tareAllScales() {
   scale_wheel_RR.tare();
   scale_wheel_FL.tare();
   scale_wheel_RL.tare();
-  scale_handle.tare();
+  scale_handle_1.tare();
+  scale_handle_2.tare();
 }

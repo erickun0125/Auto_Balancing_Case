@@ -266,6 +266,10 @@ class DynamixelXL430Interface:
             'joint_pos_target': np.array([avg_goal_position])
         }
     
+    # 이거 이상해... 수정해야해################################
+    # 이거 이상해... 수정해야해################################
+    # 이거 이상해... 수정해야해################################
+    # 이거 이상해... 수정해야해################################
     def get_joint_angle_rad(self) -> float:
         """현재 조인트 각도를 라디안으로 반환 (듀얼 모터의 평균값 사용)"""
         avg_position = np.mean(list(self.current_positions.values()))
@@ -279,7 +283,10 @@ class DynamixelXL430Interface:
         avg_velocity = np.mean(list(self.current_velocities.values()))
         velocity_rad_s = avg_velocity * 0.01  # 임시 변환 계수
         return velocity_rad_s
-    
+    # 이거 이상해... 수정해야해################################
+    # 이거 이상해... 수정해야해################################
+    # 이거 이상해... 수정해야해################################
+    # 이거 이상해... 수정해야해################################
     def normalize_observations(self, obs: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
         """Observation을 RL에서 사용하는 정규화된 범위로 변환"""
         normalized = {}
@@ -348,8 +355,8 @@ if __name__ == "__main__":
     # 하드웨어 인터페이스 초기화
     hw_interface = DynamixelXL430Interface(
         motor_ids=motor_ids,
-        device_name='/dev/ttyUSB0',  # Linux
-        # device_name='COM3',        # Windows
+        device_name='/dev/ttyUSB0',  # Linux 
+        # device_name='COM3',        # Windows 이거는 나중에
         control_mode=DynamixelXL430Interface.POSITION_CONTROL_MODE
     )
     

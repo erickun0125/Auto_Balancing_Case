@@ -27,7 +27,7 @@ class AutoBalancingCaseConfig:
     
     # Hardware 설정 - Dual Motors
     motor_ids: List[int] = None  # [1, 2] - 듀얼 모터 ID
-    motor_device: str = '/dev/ttyUSB0'
+    motor_device: str = '/dev/ttyUSB0' # windows COM port 예: 'COM11' 나중에 바꾸기
     motor_baudrate: int = 57600
     
     # Load cell 설정 - Arduino 기반

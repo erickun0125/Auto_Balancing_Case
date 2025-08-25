@@ -1,136 +1,114 @@
-/*
-   로드셀 센서 데이터를 Python으로 실시간 스트리밍
-   HX711 ADC 라이브러리 사용
-   수정: 기존 디버깅 코드 → 실시간 데이터 스트림
-*/
-
+/* 이중 HX711 로드셀 - 간단 버전 */
 #include <HX711_ADC.h>
 #if defined(ESP8266)|| defined(ESP32) || defined(AVR)
 #include <EEPROM.h>
 #endif
 
-//pins:
-const int HX711_dout = 4; //mcu > HX711 dout pin
-const int HX711_sck = 5; //mcu > HX711 sck pin
+// 두 HX711 핀 설정
+const int HX711_1_dout = 4;
+const int HX711_1_sck = 5;
+const int HX711_2_dout = 6;
+const int HX711_2_sck = 7;
 
-//HX711 constructor:
-HX711_ADC LoadCell(HX711_dout, HX711_sck);
+// HX711 객체
+HX711_ADC LoadCell1(HX711_1_dout, HX711_1_sck);
+HX711_ADC LoadCell2(HX711_2_dout, HX711_2_sck);
 
 const int calVal_eepromAdress = 0;
 unsigned long lastSensorRead = 0;
-const int SENSOR_INTERVAL = 10; // 10ms = 100Hz
+const int SENSOR_INTERVAL = 10; // 100Hz
 
-// 추가 센서들 (예시)
 const int BUTTON_PIN = 2;
 const int LED_PIN = 13;
 
 void setup() {
-  Serial.begin(115200); // Python 호환을 위해 115200으로 변경
+  Serial.begin(115200);
   delay(10);
   
-  // 버튼과 LED 설정
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   pinMode(LED_PIN, OUTPUT);
   
-  LoadCell.begin();
+  LoadCell1.begin();
+  LoadCell2.begin();
   
-  // 실시간 성능을 위한 설정
-  LoadCell.setSamplesInUse(1); // 최고 응답성을 위해 1로 설정
+  LoadCell1.setSamplesInUse(1);
+  LoadCell2.setSamplesInUse(1);
   
   unsigned long stabilizingtime = 2000;
   boolean _tare = true;
-  LoadCell.start(stabilizingtime, _tare);
   
-  if (LoadCell.getTareTimeoutFlag() || LoadCell.getSignalTimeoutFlag()) {
-    // 에러 발생 시 특별한 메시지 전송
+  LoadCell1.start(stabilizingtime, _tare);
+  LoadCell2.start(stabilizingtime, _tare);
+  
+  if (LoadCell1.getTareTimeoutFlag() || LoadCell1.getSignalTimeoutFlag() ||
+      LoadCell2.getTareTimeoutFlag() || LoadCell2.getSignalTimeoutFlag()) {
     Serial.println("ERROR:HX711_TIMEOUT");
     while (1);
   }
-  else {
-    // EEPROM에서 calibration 값 로드 시도
-    float calibrationValue;
-    EEPROM.get(calVal_eepromAdress, calibrationValue);
-    if (isnan(calibrationValue)) {
-      calibrationValue = 1.0; // 기본값
-    }
-    LoadCell.setCalFactor(calibrationValue);
-    
-    // 초기화 완료 신호
-    Serial.println("READY");
-  }
   
-  while (!LoadCell.update());
+  // EEPROM 캘리브레이션 로드
+  float cal1, cal2;
+  EEPROM.get(0, cal1);
+  EEPROM.get(4, cal2);
+  if (isnan(cal1)) cal1 = 1.0;
+  if (isnan(cal2)) cal2 = 1.0;
+  
+  LoadCell1.setCalFactor(cal1);
+  LoadCell2.setCalFactor(cal2);
+  
+  Serial.println("READY");
+  
+  while (!LoadCell1.update() || !LoadCell2.update());
 }
 
 void loop() {
-  static boolean newDataReady = 0;
+  static boolean newDataReady = false;
   unsigned long currentTime = millis();
   
-  // 센서 데이터 업데이트
-  if (LoadCell.update()) newDataReady = true;
+  if (LoadCell1.update()) newDataReady = true;
+  if (LoadCell2.update()) newDataReady = true;
   
-  // 정해진 주기마다 데이터 전송
   if (newDataReady && (currentTime - lastSensorRead >= SENSOR_INTERVAL)) {
     
-    // 모든 센서 값 읽기
-    float loadCellValue = LoadCell.getData();
-    int buttonState = digitalRead(BUTTON_PIN);
-    unsigned long timestamp = millis();
+    float val1 = LoadCell1.getData();
+    float val2 = LoadCell2.getData();
     
-    // CSV 형태로 데이터 전송 (Python에서 파싱하기 쉬움)
-    Serial.print(timestamp);
-    Serial.print(",");
-    Serial.print(loadCellValue, 3); // 소수점 3자리
-    Serial.print(",");
-    Serial.print(buttonState);
-    Serial.print(",");
-    Serial.print(LoadCell.getTareStatus() ? 1 : 0); // Tare 상태
-    Serial.println(); // 줄바꿈으로 패킷 구분
+    // 평균을 빼고 큰 값을 2배
+    float avg = (val1 + val2) / 2.0;
+    float diff1 = val1 - avg;
+    float diff2 = val2 - avg;
     
-    newDataReady = 0;
+    
+    // CSV 전송: timestamp,processed_value,button,tare_status
+
+    Serial.print(diff1, 3);
+    Serial.print(",");
+    Serial.print(digitalRead(BUTTON_PIN));
+    Serial.print(",");
+    Serial.print((LoadCell1.getTareStatus() || LoadCell2.getTareStatus()) ? 1 : 0);
+    Serial.println();
+    
+    newDataReady = false;
     lastSensorRead = currentTime;
-    
-    // LED 깜빡임으로 동작 확인
     digitalWrite(LED_PIN, !digitalRead(LED_PIN));
   }
   
-  // 시리얼 명령 처리 (Python에서 제어 가능)
+  // 명령 처리
   if (Serial.available() > 0) {
-    String command = Serial.readStringUntil('\n');
-    command.trim();
+    String cmd = Serial.readStringUntil('\n');
+    cmd.trim();
     
-    if (command == "TARE") {
-      LoadCell.tareNoDelay();
+    if (cmd == "TARE") {
+      LoadCell1.tareNoDelay();
+      LoadCell2.tareNoDelay();
       Serial.println("TARE_STARTED");
     }
-    else if (command == "STATUS") {
-      Serial.print("STATUS:");
-      Serial.print("CAL=");
-      Serial.print(LoadCell.getCalFactor(), 6);
-      Serial.print(",SAMPLES=");
-      Serial.print(LoadCell.getSamplesInUse());
-      Serial.println();
-    }
-    else if (command.startsWith("CAL=")) {
-      float newCal = command.substring(4).toFloat();
-      if (newCal != 0) {
-        LoadCell.setCalFactor(newCal);
-        Serial.print("CAL_SET:");
-        Serial.println(newCal, 6);
-      }
-    }
-    else if (command.startsWith("SAMPLES=")) {
-      int newSamples = command.substring(8).toInt();
-      if (newSamples > 0 && newSamples <= 16) {
-        LoadCell.setSamplesInUse(newSamples);
-        Serial.print("SAMPLES_SET:");
-        Serial.println(newSamples);
-      }
+    else if (cmd == "STATUS") {
+      Serial.println("STATUS:OK");
     }
   }
   
-  // Tare 완료 확인
-  if (LoadCell.getTareStatus() == true) {
+  if (LoadCell1.getTareStatus() || LoadCell2.getTareStatus()) {
     Serial.println("TARE_COMPLETE");
   }
 }

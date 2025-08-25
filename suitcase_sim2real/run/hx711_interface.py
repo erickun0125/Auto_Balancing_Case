@@ -23,14 +23,14 @@ except ImportError:
             def __init__(self, port, baudrate, timeout=1): 
                 self.is_open = True
             def close(self): pass
-            def readline(self): return b'{"wheel_FR":0.0,"wheel_RR":0.0,"wheel_FL":0.0,"wheel_RL":0.0,"handle":0.0}\n'
+            def readline(self): return b'{"wheel_FR":0.0,"wheel_RR":0.0,"wheel_FL":0.0,"wheel_RL":0.0,"handle_1":0.0,"handle_2":0.0}\n'
             def write(self, data): pass
             def flush(self): pass
 
 class HX711LoadCellInterface:
     """Arduino를 통해 HX711 load cell 데이터를 실시간으로 읽는 인터페이스"""
     
-    def __init__(self, arduino_port: str = '/dev/ttyACM0', baudrate: int = 115200):
+    def __init__(self, arduino_port: str = 'COM7', baudrate: int = 115200):
         """
         Args:
             arduino_port: Arduino 시리얼 포트 (Linux: /dev/ttyACM0, Windows: COM3)
@@ -44,7 +44,7 @@ class HX711LoadCellInterface:
         self._initialize_serial_connection()
         
         # 현재 읽기 값들 (Arduino에서 받을 load cell 이름들)
-        self.load_cell_names = ['wheel_FR', 'wheel_RR', 'wheel_FL', 'wheel_RL', 'handle']
+        self.load_cell_names = ['wheel_FR', 'wheel_RR', 'wheel_FL', 'wheel_RL', 'handle_1', 'handle_2']
         self.current_forces = {name: 0.0 for name in self.load_cell_names}
         self.calibrated_forces = {name: 0.0 for name in self.load_cell_names}
         
@@ -195,13 +195,14 @@ class HX711LoadCellInterface:
                 forces.append(0.0)
         
         return np.array(forces)
-    
+    ################################################################################################################################################
+    ################################################################################################################################################
     def get_handle_force(self) -> float:
         """손잡이의 force 값 반환"""
-        if 'handle' in self.calibrated_forces:
-            return abs(self.calibrated_forces['handle'])  # 절댓값 사용
-        return 0.0
-    
+        handle_force = self.calibrated_forces['handle_1'] - (self.calibrated_forces['handle_1'] + self.calibrated_forces['handle_2']) / 2.0
+        return handle_force
+    ################################################################################################################################################
+    ################################################################################################################################################
     def get_observations(self) -> Dict[str, np.ndarray]:
         """RL Policy를 위한 observation 데이터 반환"""
         return {

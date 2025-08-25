@@ -63,11 +63,11 @@ def create_default_config(config_path: str):
         'hardware': {
             'motor': {
                 'ids': [1, 2],  # 듀얼 모터 ID
-                'device': '/dev/ttyUSB0',
+                'device': 'COM7',  # 모터 포트
                 'baudrate': 57600
             },
             'arduino': {
-                'port': '/dev/ttyACM0',  # Arduino 포트
+                'port': 'COM7',  # Arduino 포트
                 'baudrate': 115200
             }
         },
@@ -97,7 +97,7 @@ def main():
     parser.add_argument('--config', '-c', type=str, default='config/policy_config.yml',
                         help='설정 파일 경로')
     parser.add_argument('--mode', '-m', type=str, choices=['episode', 'continuous', 'calibrate'], 
-                        default='episode',
+                        default='calibrate', # 기본값을 calibrate로 변경 다음에 episode로 바꾸기
                         help='실행 모드: episode(한 에피소드), continuous(연속), calibrate(캘리브레이션)')
     parser.add_argument('--create-config', action='store_true',
                         help='기본 설정 파일 생성')
