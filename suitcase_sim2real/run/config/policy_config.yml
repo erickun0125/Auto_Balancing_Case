@@ -18,7 +18,7 @@ observation:
 policy:
   control_frequency: 50.0
   device: cpu
-  model_path: /path/to/your/rsl_rl_checkpoint.pt
+  model_path: c:/Users/sangu/Auto_Balancing_Case/suitcase_learning/trained_model/model_19999.pt
 safety:
   emergency_angle_limit: 0.4
   max_episode_steps: 400

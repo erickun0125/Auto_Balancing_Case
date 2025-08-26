@@ -59,7 +59,7 @@ class DynamixelXL430Interface:
     MAX_ANGLE_RAD = 0.5     # 최대 각도 (라디안, ±0.5rad = ±28.6도)
     POSITION_PER_RAD = POSITION_RANGE / (2 * np.pi)  # 1 라디안당 위치값
     
-    def __init__(self, motor_ids: list = [1, 2], device_name: str = '/dev/ttyUSB0', 
+    def __init__(self, motor_ids: list = [1, 2], device_name: str = 'COM11', 
                  baudrate: int = 57600, control_mode: int = POSITION_CONTROL_MODE):
         """
         Auto Balancing Case용 듀얼 모터 인터페이스
@@ -105,7 +105,7 @@ class DynamixelXL430Interface:
         """듀얼 밸런싱 모터 초기 설정"""
         for motor_id in self.motor_ids:
             # 토크 비활성화
-            self._write_1byte(motor_id, self.ADDR_TORQUE_ENABLE, 0)
+            self._write_1byte(motor_id, self.ADDR_TORQUE_ENABLE, 1)
             
             # 제어 모드 설정
             self._write_1byte(motor_id, self.ADDR_OPERATING_MODE, self.control_mode)
@@ -114,7 +114,7 @@ class DynamixelXL430Interface:
             self._write_4byte(motor_id, self.ADDR_GOAL_POSITION, self.CENTER_POSITION)
             
             # 토크 활성화
-            self._write_1byte(motor_id, self.ADDR_TORQUE_ENABLE, 1)
+            # self._write_1byte(motor_id, self.ADDR_TORQUE_ENABLE, 1)
             
             print(f"밸런싱 모터 {motor_id} 초기화 완료 (중앙 위치: {self.CENTER_POSITION})")
     
@@ -250,7 +250,11 @@ class DynamixelXL430Interface:
             curr_cmd += 65536  # 2의 보수
         for motor_id in self.motor_ids:
             self._write_4byte(motor_id, self.ADDR_GOAL_CURRENT, curr_cmd)
-    
+            
+        # 이거 이상해... 수정해야해################################
+    # 이거 이상해... 수정해야해################################
+    # 이거 이상해... 수정해야해################################
+    # 이거 이상해... 수정해야해################################
     def get_observations(self) -> Dict[str, np.ndarray]:
         """RL Policy를 위한 observation 데이터 반환 (듀얼 모터의 평균값 사용)"""
         # 두 모터의 평균값을 사용하여 단일 조인트처럼 처리
