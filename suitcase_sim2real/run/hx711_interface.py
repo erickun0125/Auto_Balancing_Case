@@ -260,7 +260,6 @@ class HX711LoadCellInterface:
             except Exception as e:
                 print(f"Arduino 명령 전송 오류: {e}")
     
-
     def _read_sensor_data(self) -> Optional[Dict[str, float]]:
         """Arduino에서 센서 데이터 읽기"""
         if not self.serial_connection or not self.serial_connection.is_open:
@@ -269,35 +268,17 @@ class HX711LoadCellInterface:
         try:
             line = self.serial_connection.readline().decode().strip()
             if line:
-                # JSON 형태로 파싱 시도
-                if line.startswith('{') and line.endswith('}'):
-                    try:
-                        data = json.loads(line)
-                        return data
-                    except json.JSONDecodeError:
-                        pass
-                
-                # "7.162,1,0" 같은 CSV 형식 처리
-                elif ',' in line:
-                    try:
-                        values = [float(x.strip()) for x in line.split(',')]
-                        if len(values) >= 1:
-                            # 첫 번째 값을 모든 센서에 할당 (임시)
-                            main_value = values[0]
-                            data = {name: main_value for name in self.load_cell_names}
-                            return data
-                    except ValueError:
-                        pass
-                
-                # 시스템 메시지는 무시
-                if any(word in line.lower() for word in ['ready', 'tared', 'calibration']):
-                    return None
-                    
+                # JSON 형태로 데이터 파싱
+                # 예상 형태: {"wheel_FR":123.45,"wheel_RR":67.89,"wheel_FL":234.56,"wheel_RL":78.90,"handle":12.34}
+                data = json.loads(line)
+                return data
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            print(f"Arduino 데이터 파싱 오류: {e}")
         except Exception as e:
             print(f"Arduino 데이터 읽기 오류: {e}")
         
         return None
-   
+    
     def shutdown(self):
         """정리 및 종료"""
         self.stop_real_time_reading()
