@@ -49,7 +49,7 @@ void setup() {
   // EEPROM 캘리브레이션 로드
   float cal1, cal2;
   EEPROM.get(0, cal1);
-  EEPROM.get(4, cal2);
+  EEPROM.get(0, cal2);
   if (isnan(cal1)) cal1 = 1.0;
   if (isnan(cal2)) cal2 = 1.0;
   
@@ -82,6 +82,8 @@ void loop() {
     // CSV 전송: timestamp,processed_value,button,tare_status
 
     Serial.print(diff1, 3);
+    Serial.print(",");
+    Serial.print(diff2, 3);
     Serial.print(",");
     Serial.print(digitalRead(BUTTON_PIN));
     Serial.print(",");

@@ -250,19 +250,22 @@ class DynamixelXL430Interface:
             curr_cmd += 65536  # 2의 보수
         for motor_id in self.motor_ids:
             self._write_4byte(motor_id, self.ADDR_GOAL_CURRENT, curr_cmd)
-            
-        # 이거 이상해... 수정해야해################################
-    # 이거 이상해... 수정해야해################################
-    # 이거 이상해... 수정해야해################################
+
     # 이거 이상해... 수정해야해################################
     def get_observations(self) -> Dict[str, np.ndarray]:
-        """RL Policy를 위한 observation 데이터 반환 (듀얼 모터의 평균값 사용)"""
+        """RL Policy를 위한 observation 데이터 반환 듀얼 모터 중 + 값을 갖는 하나 사용"""
         # 두 모터의 평균값을 사용하여 단일 조인트처럼 처리
-        avg_position = np.mean(list(self.current_positions.values()))
-        avg_velocity = np.mean(list(self.current_velocities.values()))
-        avg_current = np.mean(list(self.current_currents.values()))
-        avg_goal_position = np.mean(list(self.goal_positions.values()))
+        #avg_position = np.mean(list(self.current_positions.values()))
+        #avg_velocity = np.mean(list(self.current_velocities.values()))
+        #avg_current = np.mean(list(self.current_currents.values()))
+        #avg_goal_position = np.mean(list(self.goal_positions.values()))
         
+        # +theta 모터 (첫 번째 모터) 값 사용
+        avg_position = self.current_positions[self.motor_ids[0]]
+        avg_velocity = self.current_velocities[self.motor_ids[0]]
+        avg_current = self.current_currents[self.motor_ids[0]]
+        avg_goal_position = self.goal_positions[self.motor_ids[0]]
+
         return {
             'joint_pos': np.array([avg_position]),
             'joint_vel': np.array([avg_velocity]), 
@@ -276,7 +279,10 @@ class DynamixelXL430Interface:
     # 이거 이상해... 수정해야해################################
     def get_joint_angle_rad(self) -> float:
         """현재 조인트 각도를 라디안으로 반환 (듀얼 모터의 평균값 사용)"""
-        avg_position = np.mean(list(self.current_positions.values()))
+        # +theta 모터 (첫 번째 모터) 값 사용
+
+        #avg_position = np.mean(list(self.current_positions.values()))
+        avg_position = self.current_positions[self.motor_ids[0]]
         angle_rad = (avg_position - self.CENTER_POSITION) / self.POSITION_PER_RAD
         return angle_rad
     
@@ -284,13 +290,11 @@ class DynamixelXL430Interface:
         """현재 조인트 각속도를 라디안/초로 반환 (듀얼 모터의 평균값 사용)"""
         # XL430의 velocity 단위를 라디안/초로 변환 (대략적인 변환)
         # 실제 변환 계수는 모터 사양서를 참조하여 조정 필요
-        avg_velocity = np.mean(list(self.current_velocities.values()))
+        #avg_velocity = np.mean(list(self.current_velocities.values()))
+        # +theta 모터 (첫 번째 모터) 값 사용
+        avg_velocity = self.current_velocities[self.motor_ids[0]]
         velocity_rad_s = avg_velocity * 0.01  # 임시 변환 계수
         return velocity_rad_s
-    # 이거 이상해... 수정해야해################################
-    # 이거 이상해... 수정해야해################################
-    # 이거 이상해... 수정해야해################################
-    # 이거 이상해... 수정해야해################################
     def normalize_observations(self, obs: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
         """Observation을 RL에서 사용하는 정규화된 범위로 변환"""
         normalized = {}

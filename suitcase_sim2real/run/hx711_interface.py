@@ -51,7 +51,7 @@ class HX711LoadCellInterface:
         # 실시간 읽기를 위한 변수들
         self.is_reading = False
         self.read_thread = None
-        self.read_frequency = 50  # Hz
+        self.read_frequency = 10  # Hz
         
         # 캘리브레이션을 위한 변수들
         self.zero_offsets = {name: 0.0 for name in self.load_cell_names}
@@ -89,6 +89,12 @@ class HX711LoadCellInterface:
         print("모든 load cell에 무게를 제거하고 5초 기다려주세요...")
         time.sleep(5)
         
+        # 실시간 읽기 시작 (캘리브레이션을 위해 필요)
+        was_reading = self.is_reading
+        if not was_reading:
+            self.start_real_time_reading()
+            time.sleep(1)  # 스레드 시작 대기
+        
         # Arduino에 영점 조정 명령 전송
         self._send_command("TARE_ALL")
         time.sleep(2)
@@ -105,13 +111,14 @@ class HX711LoadCellInterface:
         print("캘리브레이션 값 측정 중...")
         readings = {name: [] for name in self.load_cell_names}
         
-        for _ in range(10):  # 10회 측정
-            data = self._read_sensor_data()
-            if data:
-                for name in self.load_cell_names:
-                    if name in data:
-                        readings[name].append(data[name])
-            time.sleep(0.1)
+        for i in range(10):  # 10회 측정
+            # 현재 실시간으로 업데이트되는 current_forces 사용
+            for name in self.load_cell_names:
+                if name in self.current_forces:
+                    readings[name].append(self.current_forces[name])
+            
+            print(f"측정 {i+1}/10: {dict(self.current_forces)}")
+            time.sleep(0.15)
         
         # 캘리브레이션 계수 계산
         for name in self.load_cell_names:
@@ -124,6 +131,10 @@ class HX711LoadCellInterface:
                     print(f"'{name}' 캘리브레이션 실패 - 0 값")
             else:
                 print(f"'{name}' 캘리브레이션 실패 - 데이터 없음")
+        
+        # 원래 상태 복원
+        if not was_reading:
+            self.stop_real_time_reading()
         
         print("캘리브레이션 완료!")
     
@@ -261,33 +272,45 @@ class HX711LoadCellInterface:
                 print(f"Arduino 명령 전송 오류: {e}")
     
     def _read_sensor_data(self) -> Optional[Dict[str, float]]:
-        """Arduino에서 센서 데이터 읽기"""
+        """Arduino에서 센서 데이터 읽기 (CSV 형식 - 작동하는 방식)"""
         if not self.serial_connection or not self.serial_connection.is_open:
             return None
         
         try:
-            line = self.serial_connection.readline().decode().strip()
-            if line:
-                # JSON 형태로 데이터 파싱
-                # 예상 형태: {"wheel_FR":123.45,"wheel_RR":67.89,"wheel_FL":234.56,"wheel_RL":78.90,"handle":12.34}
-                data = json.loads(line)
-                return data
-        except (json.JSONDecodeError, UnicodeDecodeError) as e:
-            print(f"Arduino 데이터 파싱 오류: {e}")
+            if self.serial_connection.in_waiting > 0:
+                line = self.serial_connection.readline().decode('utf-8', errors='ignore').strip()
+                
+                # READY, STATUS, ERROR 등 시스템 메시지 처리
+                if line in ['READY'] or line.startswith('STATUS:') or line.startswith('ERROR:') or line.startswith('TARE_') or line.startswith('UNKNOWN_'):
+                    print(f"Arduino 시스템 메시지: {line}")
+                    return None
+                
+                # CSV 데이터 파싱
+                if line and ',' in line:
+                    try:
+                        values = line.split(',')
+                        if len(values) == 6:
+                            data = {
+                                'wheel_FR': float(values[0]),
+                                'wheel_RR': float(values[1]),
+                                'wheel_FL': float(values[2]),
+                                'wheel_RL': float(values[3]),
+                                'handle_1': float(values[4]),
+                                'handle_2': float(values[5])
+                            }
+                            return data
+                        else:
+                            print(f"CSV 형식 오류 - {len(values)}개 값: {line}")
+                    except ValueError as e:
+                        print(f"숫자 변환 실패: {e}, 데이터: '{line}'")
+                elif line:
+                    print(f"알 수 없는 형식: '{line}'")
+            
+            return None
+            
         except Exception as e:
-            print(f"Arduino 데이터 읽기 오류: {e}")
-        
-        return None
-    
-    def shutdown(self):
-        """정리 및 종료"""
-        self.stop_real_time_reading()
-        
-        # 시리얼 연결 종료
-        if self.serial_connection and self.serial_connection.is_open:
-            self.serial_connection.close()
-        
-        print("HX711 Load Cell Arduino 인터페이스 종료")
+            print(f"데이터 읽기 오류: {e}")
+            return None
 
 
 # 사용 예제
