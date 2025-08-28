@@ -379,6 +379,21 @@ class HX711LoadCellInterface:
             print(f"캘리브레이션 파일 {filename}을 찾을 수 없습니다.")
         except Exception as e:
             print(f"캘리브레이션 로드 오류: {e}")
+
+    def shutdown(self):
+        """정리 및 종료"""
+        try:
+            # 실시간 읽기 중지
+            self.stop_real_time_reading()
+            
+            # 시리얼 연결 종료
+            if self.serial_connection and self.serial_connection.is_open:
+                self.serial_connection.close()
+                print("Arduino 시리얼 연결 종료")
+        except Exception as e:
+            print(f"HX711 인터페이스 종료 오류: {e}")
+        finally:
+            self.serial_connection = None
     
     def _send_command(self, command: str):
         """Arduino에 명령 전송"""
@@ -435,7 +450,7 @@ class HX711LoadCellInterface:
 if __name__ == "__main__":
     # Arduino 기반 Load cell 인터페이스 초기화
     load_cell_interface = HX711LoadCellInterface(
-        arduino_port='/dev/ttyACM0',  # Linux
+        arduino_port='COM7',  # Linux
         # arduino_port='COM3',        # Windows
         baudrate=115200
     )
