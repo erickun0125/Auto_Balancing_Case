@@ -72,7 +72,8 @@ class DynamixelXL430Interface:
         """
         self.motor_ids = motor_ids
         self.control_mode = control_mode
-        
+
+        self.port_lock = threading.Lock()
         # SDK 초기화
         self.port_handler = PortHandler(device_name)
         self.packet_handler = PacketHandler(2.0)  # Protocol 2.0
@@ -86,7 +87,7 @@ class DynamixelXL430Interface:
         # 실시간 읽기를 위한 변수들
         self.is_reading = False
         self.read_thread = None
-        self.read_frequency = 100  # Hz
+        self.read_frequency = 20  # Hz
         
         self._initialize_connection()
         self._setup_motor()
@@ -102,50 +103,56 @@ class DynamixelXL430Interface:
         print("Dynamixel 연결 성공")
     
     def _setup_motor(self):
-        """듀얼 밸런싱 모터 초기 설정"""
+        """듀얼 밸런싱 모터 초기 설정 (올바른 순서)"""
         for motor_id in self.motor_ids:
-            # 토크 비활성화
-            self._write_1byte(motor_id, self.ADDR_TORQUE_ENABLE, 1)
+            # 1. 먼저 토크 비활성화 (필수!)
+            self._write_1byte(motor_id, self.ADDR_TORQUE_ENABLE, 0)  # 0 = 토크 비활성화
+            time.sleep(0.01)  # 설정 안정화 대기
             
-            # 제어 모드 설정
+            # 2. 제어 모드 설정 (토크 비활성화 상태에서만 가능)
             self._write_1byte(motor_id, self.ADDR_OPERATING_MODE, self.control_mode)
+            time.sleep(0.01)
             
-            # 중앙 위치로 이동
+            # 3. 토크 활성화
+            self._write_1byte(motor_id, self.ADDR_TORQUE_ENABLE, 1)  # 1 = 토크 활성화
+            time.sleep(0.01)
+            
+            # 4. 중앙 위치로 이동 (토크 활성화 후)
             self._write_4byte(motor_id, self.ADDR_GOAL_POSITION, self.CENTER_POSITION)
-            
-            # 토크 활성화
-            # self._write_1byte(motor_id, self.ADDR_TORQUE_ENABLE, 1)
             
             print(f"밸런싱 모터 {motor_id} 초기화 완료 (중앙 위치: {self.CENTER_POSITION})")
     
     def _write_1byte(self, motor_id: int, address: int, value: int):
-        """1바이트 데이터 쓰기"""
-        result, error = self.packet_handler.write1ByteTxRx(
-            self.port_handler, motor_id, address, value)
-        if result != COMM_SUCCESS:
-            print(f"Write error: {self.packet_handler.getTxRxResult(result)}")
-        if error != 0:
-            print(f"Hardware error: {self.packet_handler.getRxPacketError(error)}")
-    
+        """1바이트 데이터 쓰기 (스레드 안전)"""
+        with self.port_lock:  # 뮤텍스 사용
+            result, error = self.packet_handler.write1ByteTxRx(
+                self.port_handler, motor_id, address, value)
+            if result != COMM_SUCCESS:
+                print(f"Write error: {self.packet_handler.getTxRxResult(result)}")
+            if error != 0:
+                print(f"Hardware error: {self.packet_handler.getRxPacketError(error)}")
+
     def _write_4byte(self, motor_id: int, address: int, value: int):
-        """4바이트 데이터 쓰기"""
-        result, error = self.packet_handler.write4ByteTxRx(
-            self.port_handler, motor_id, address, value)
-        if result != COMM_SUCCESS:
-            print(f"Write error: {self.packet_handler.getTxRxResult(result)}")
-        if error != 0:
-            print(f"Hardware error: {self.packet_handler.getRxPacketError(error)}")
+        """4바이트 데이터 쓰기 (스레드 안전)"""
+        with self.port_lock:  # 뮤텍스 사용
+            result, error = self.packet_handler.write4ByteTxRx(
+                self.port_handler, motor_id, address, value)
+            if result != COMM_SUCCESS:
+                print(f"Write error: {self.packet_handler.getTxRxResult(result)}")
+            if error != 0:
+                print(f"Hardware error: {self.packet_handler.getRxPacketError(error)}")
     
     def _read_4byte(self, motor_id: int, address: int) -> int:
-        """4바이트 데이터 읽기"""
-        value, result, error = self.packet_handler.read4ByteTxRx(
-            self.port_handler, motor_id, address)
-        if result != COMM_SUCCESS:
-            print(f"Read error: {self.packet_handler.getTxRxResult(result)}")
-            return 0
-        if error != 0:
-            print(f"Hardware error: {self.packet_handler.getRxPacketError(error)}")
-        return value
+        """4바이트 데이터 읽기 (스레드 안전)"""
+        with self.port_lock:  # 뮤텍스 사용
+            value, result, error = self.packet_handler.read4ByteTxRx(
+                self.port_handler, motor_id, address)
+            if result != COMM_SUCCESS:
+                print(f"Read error: {self.packet_handler.getTxRxResult(result)}")
+                return 0
+            if error != 0:
+                print(f"Hardware error: {self.packet_handler.getRxPacketError(error)}")
+            return value
     
     def start_real_time_reading(self):
         """백그라운드에서 실시간으로 센서 데이터 읽기 시작"""

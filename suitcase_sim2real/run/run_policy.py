@@ -63,7 +63,7 @@ def create_default_config(config_path: str):
         'hardware': {
             'motor': {
                 'ids': [1, 2],  # 듀얼 모터 ID
-                'device': 'COM7',  # 모터 포트
+                'device': 'COM11',  # 모터 포트
                 'baudrate': 57600
             },
             'arduino': {
