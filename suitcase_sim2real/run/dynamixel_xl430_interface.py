@@ -340,20 +340,24 @@ class DynamixelXL430Interface:
     
     def shutdown(self):
         """정리 및 종료"""
-        self.stop_real_time_reading()
-        
-        # 모든 모터를 중앙 위치로 이동 후 토크 비활성화
-        for motor_id in self.motor_ids:
-            self._write_4byte(motor_id, self.ADDR_GOAL_POSITION, self.CENTER_POSITION)
-        time.sleep(1.0)  # 이동 완료 대기
-        
-        for motor_id in self.motor_ids:
-            self._write_1byte(motor_id, self.ADDR_TORQUE_ENABLE, 0)
-        
-        # 포트 닫기
-        self.port_handler.closePort()
-        print("Dynamixel 듀얼 모터 인터페이스 종료")
-
+        try:
+            self.stop_real_time_reading()
+            
+            # 모든 모터를 중앙 위치로 이동 후 토크 비활성화
+            for motor_id in self.motor_ids:
+                self._write_4byte(motor_id, self.ADDR_GOAL_POSITION, self.CENTER_POSITION)
+            time.sleep(1.0)
+            
+            for motor_id in self.motor_ids:
+                self._write_1byte(motor_id, self.ADDR_TORQUE_ENABLE, 0)
+                
+        except Exception as e:
+            print(f"Shutdown error: {e}")
+        finally:
+            # 포트 강제 종료
+            if hasattr(self, 'port_handler') and self.port_handler:
+                self.port_handler.closePort()
+            print("Dynamixel 듀얼 모터 인터페이스 종료")
 
 # 사용 예제
 if __name__ == "__main__":

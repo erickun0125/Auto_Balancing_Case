@@ -487,7 +487,7 @@ class AutoBalancingCaseBridge:
     def calibrate_load_cells(self):
         """Load cell 캘리브레이션 수행"""
         print("Starting load cell calibration...")
-        self.load_cell_interface.calibrate_all_load_cells(1000.0)  # 1kg 추 사용
+        self.load_cell_interface.calibrate_all_load_cells(200.0)  # 1kg 추 사용
         self.load_cell_interface.save_calibration()
     
     def shutdown(self):

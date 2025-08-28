@@ -78,8 +78,8 @@ class HX711LoadCellInterface:
             print(f"Arduino 연결 실패: {e}")
             print("Mock mode로 전환합니다.")
             self.serial_connection = serial.Serial(self.arduino_port, self.baudrate)  # Mock
-    
-    def calibrate_all_load_cells(self, known_weight: float = 1000.0):
+    '''
+    def calibrate_all_load_cells(self, known_weight: float = 100.0):
         """Arduino를 통해 모든 load cell 캘리브레이션 수행
         
         Args:
@@ -137,7 +137,123 @@ class HX711LoadCellInterface:
             self.stop_real_time_reading()
         
         print("캘리브레이션 완료!")
-    
+    '''
+    def calibrate_single_load_cell(self, cell_name: str, known_weight: float = 200.0):
+        """단일 load cell 캘리브레이션 수행
+        
+        Args:
+            cell_name: 캘리브레이션할 load cell 이름 (예: 'wheel_FR', 'handle_1')
+            known_weight: 알려진 무게 (그램 단위)
+        """
+        if cell_name not in self.load_cell_names:
+            print(f"오류: '{cell_name}'은 유효하지 않은 load cell 이름입니다.")
+            print(f"유효한 이름들: {self.load_cell_names}")
+            return False
+        
+        print(f"\n=== '{cell_name}' Load Cell 캘리브레이션 시작 ===")
+        print(f"'{cell_name}'에서 모든 무게를 제거하고 5초 기다려주세요...")
+        time.sleep(5)
+        
+        # 해당 load cell만 영점 조정
+        self._send_command(f"TARE_{cell_name.upper()}")
+        time.sleep(2)
+        
+        # 영점 값 초기화
+        self.zero_offsets[cell_name] = 0.0
+        print(f"'{cell_name}' 영점 조정 완료")
+        
+        print(f"\n이제 '{cell_name}'에 {known_weight}g의 무게를 올려주세요...")
+        input("준비되면 Enter를 눌러주세요...")
+        
+        # 캘리브레이션 값 측정
+        print("캘리브레이션 값 측정 중...")
+        readings = []
+        
+        for i in range(10):  # 10회 측정
+            data = self._read_sensor_data()
+            if data and cell_name in data:
+                readings.append(data[cell_name])
+                print(f"  측정 {i+1}/10: {data[cell_name]:.2f}")
+            time.sleep(0.1)
+        
+        # 캘리브레이션 계수 계산
+        if readings:
+            avg_reading = np.mean(readings)
+            if avg_reading != 0:
+                self.calibration_factors[cell_name] = avg_reading / known_weight
+                print(f"'{cell_name}' 캘리브레이션 성공!")
+                print(f"  평균 측정값: {avg_reading:.2f}")
+                print(f"  캘리브레이션 계수: {self.calibration_factors[cell_name]:.6f}")
+                return True
+            else:
+                print(f"'{cell_name}' 캘리브레이션 실패 - 0 값")
+                return False
+        else:
+            print(f"'{cell_name}' 캘리브레이션 실패 - 데이터 없음")
+            return False
+    def calibrate_all_load_cells(self, known_weight: float = 200.0):
+        """모든 load cell을 하나씩 순차적으로 캘리브레이션
+        
+        Args:
+            known_weight: 알려진 무게 (그램 단위)
+        """
+        print("=== 개별 Load Cell 캘리브레이션 시작 ===")
+        print(f"총 {len(self.load_cell_names)}개의 load cell을 순차적으로 캘리브레이션합니다.")
+        
+        successful_calibrations = []
+        failed_calibrations = []
+        
+        for i, cell_name in enumerate(self.load_cell_names, 1):
+            print(f"\n[{i}/{len(self.load_cell_names)}] '{cell_name}' 캘리브레이션")
+            
+            # 사용자에게 계속 진행할지 물어보기
+            while True:
+                response = input(f"'{cell_name}' 캘리브레이션을 진행하시겠습니까? (y/n/s): ").lower().strip()
+                if response in ['y', 'yes']:
+                    break
+                elif response in ['n', 'no']:
+                    print(f"'{cell_name}' 캘리브레이션을 건너뜁니다.")
+                    failed_calibrations.append(cell_name)
+                    continue
+                elif response in ['s', 'skip']:
+                    print("남은 모든 캘리브레이션을 건너뜁니다.")
+                    failed_calibrations.extend(self.load_cell_names[i-1:])
+                    break
+                else:
+                    print("'y'(예), 'n'(아니오), 's'(모두 건너뛰기) 중 하나를 입력해주세요.")
+            
+            if response in ['s', 'skip']:
+                break
+            
+            if response in ['n', 'no']:
+                continue
+            
+            # 개별 캘리브레이션 수행
+            success = self.calibrate_single_load_cell(cell_name, known_weight)
+            
+            if success:
+                successful_calibrations.append(cell_name)
+            else:
+                failed_calibrations.append(cell_name)
+            
+            # 마지막이 아니면 다음으로 넘어가기 전에 잠깐 대기
+            if i < len(self.load_cell_names):
+                print(f"\n다음 load cell로 넘어갑니다...")
+                time.sleep(2)
+        
+        # 결과 요약
+        print("\n=== 캘리브레이션 완료 ===")
+        print(f"성공: {len(successful_calibrations)}개")
+        if successful_calibrations:
+            print(f"  성공한 load cell: {', '.join(successful_calibrations)}")
+        
+        print(f"실패/건너뜀: {len(failed_calibrations)}개")
+        if failed_calibrations:
+            print(f"  실패/건너뜀한 load cell: {', '.join(failed_calibrations)}")
+        
+        return successful_calibrations, failed_calibrations
+
+        
     def start_real_time_reading(self):
         """백그라운드에서 실시간으로 load cell 데이터 읽기 시작"""
         if self.is_reading:
@@ -173,8 +289,10 @@ class HX711LoadCellInterface:
                             
                             # 캘리브레이션 적용
                             if self.calibration_factors[name] != 0:
-                                calibrated_value = (raw_value - self.zero_offsets[name]) / self.calibration_factors[name]
-                                self.calibrated_forces[name] = calibrated_value
+                                calibrated_value_grams = (raw_value - self.zero_offsets[name]) / self.calibration_factors[name]
+                                # 그램을 뉴턴으로 변환: weight(g) * 9.81 / 1000
+                                calibrated_value_newtons = calibrated_value_grams * 9.81 / 1000.0
+                                self.calibrated_forces[name] = calibrated_value_newtons  # ← 이제 뉴턴 단위
                             else:
                                 self.calibrated_forces[name] = 0.0
                         else:
