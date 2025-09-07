@@ -22,12 +22,12 @@ policy:
   # Control settings
   control_frequency: 50.0  # Hz (IsaacLab decimation=4, dt=0.005 -> 50Hz)
   
-  # Normalization parameters
-  normalization:
-    max_joint_angle: 0.5    # rad
-    max_joint_velocity: 6.0  # rad/s
-    max_wheel_force: 50.0   # N
-    max_handle_force: 20.0  # N
+  # Normalization parameters (더 이상 사용되지 않음 - Isaac Lab은 raw 값 사용)
+  # normalization:
+  #   max_joint_angle: 0.5    # rad (Isaac Lab clip 범위와 일치)
+  #   max_joint_velocity: 6.0  # rad/s (Isaac Lab velocity_limit_sim과 일치)
+  #   max_wheel_force: 50.0   # N
+  #   max_handle_force: 20.0  # N
 
 # 2. Sensor Interface Configuration
 sensor:
