@@ -1,0 +1,158 @@
+# Auto Balancing Case Interface Configuration
+# Policy, Sensor, Actuator 인터페이스별 설정 관리
+
+# 1. Policy Interface Configuration
+policy:
+  # Model settings
+  model_path: "/home/eric/custom/Auto_Balancing_Suitcase/suitcase_learning/trained_model/model_19999.pt"
+  device: "cpu"  # "cpu" or "cuda"
+  
+  # Network architecture (실제 학습된 모델과 일치해야 함)
+  actor_hidden_dims: [256, 128, 64]
+  critic_hidden_dims: [256, 128, 64]
+  activation: "elu"
+  init_noise_std: 1.0
+  noise_std_type: "scalar"
+  
+  # Observation settings
+  obs_history_length: 4
+  obs_dim_per_timestep: 8  # joint_pos(1) + joint_vel(1) + prev_action(1) + wheel_forces(4) + handle_force(1)
+  num_actions: 1  # 단일 밸런싱 조인트
+  
+  # Control settings
+  control_frequency: 50.0  # Hz (IsaacLab decimation=4, dt=0.005 -> 50Hz)
+  
+  # Normalization parameters
+  normalization:
+    max_joint_angle: 0.5    # rad
+    max_joint_velocity: 6.0  # rad/s
+    max_wheel_force: 50.0   # N
+    max_handle_force: 20.0  # N
+
+# 2. Sensor Interface Configuration
+sensor:
+  # Load Cell Interface (Arduino HX711 기반)
+  load_cell:
+    type: "hx711_arduino"
+    connection:
+      port: "/dev/ttyACM0"  # Linux: "/dev/ttyACM0", Windows: "COM7"
+      baudrate: 115200
+      timeout: 2.0
+    
+    # Calibration settings
+    calibration:
+      auto_load_on_startup: true
+      calibration_file: "load_cell_calibration.npz"
+      reference_weight: 200.0  # gram (1kg 추 사용 시)
+    
+    # Sensor configuration
+    sensors:
+      wheel_sensors:
+        count: 4
+        names: ["FL", "FR", "RL", "RR"]  # Front-Left, Front-Right, Rear-Left, Rear-Right
+        channels: [0, 1, 2, 3]
+      handle_sensor:
+        count: 1
+        names: ["handle"]
+        channels: [4]
+    
+    # Data processing
+    processing:
+      sampling_rate: 100.0  # Hz
+      filter_enabled: true
+      filter_type: "moving_average"
+      filter_window: 5
+      noise_threshold: 0.1  # N
+
+# 3. Actuator Interface Configuration  
+actuator:
+  # Dynamixel Motor Interface
+  motor:
+    type: "dynamixel_xl430"
+    connection:
+      device: "/dev/ttyUSB0"  # Linux: "/dev/ttyUSB0", Windows: "COM11"
+      baudrate: 57600
+      protocol_version: 2.0
+      timeout: 1.0
+    
+    # Motor configuration
+    motors:
+      balancing_joint:
+        ids: [1, 2]  # Dual motor setup
+        control_mode: "position"  # "position", "velocity", "current"
+        profile_velocity: 50  # 0~1023 (0 = infinite velocity)
+        profile_acceleration: 20  # 0~32767
+    
+    # Safety limits
+    limits:
+      position_limit: 
+        min: -0.5  # rad
+        max: 0.5   # rad
+      velocity_limit: 6.0  # rad/s
+      current_limit: 500   # mA
+      temperature_limit: 80  # Celsius
+    
+    # Control parameters
+    control:
+      pid_gains:
+        position_p: 800
+        position_i: 0
+        position_d: 0
+      
+      # Real-time monitoring
+      monitoring:
+        enabled: true
+        frequency: 100.0  # Hz
+        log_data: false
+
+# Global System Configuration
+system:
+  # Safety settings
+  safety:
+    emergency_stop:
+      enabled: true
+      angle_limit: 0.4  # rad (비상 정지 각도)
+      force_limit: 100.0  # N (비상 정지 힘)
+    
+    watchdog:
+      enabled: true
+      timeout: 1.0  # seconds
+  
+  # Episode/Session settings
+  session:
+    max_episode_steps: 400  # 50Hz * 8초 (IsaacLab episode_length_s=8.0)
+    episode_timeout: 8.0    # seconds
+    auto_reset: true
+  
+  # Logging and debugging
+  logging:
+    enabled: true
+    level: "INFO"  # "DEBUG", "INFO", "WARNING", "ERROR"
+    log_file: "auto_balancing_case.log"
+    console_output: true
+    
+    # Data logging
+    data_logging:
+      enabled: false
+      frequency: 50.0  # Hz
+      output_dir: "logs/data"
+      format: "csv"  # "csv", "json", "pickle"
+  
+  # Performance monitoring
+  performance:
+    monitor_timing: true
+    target_control_frequency: 50.0  # Hz
+    timing_warning_threshold: 0.02  # seconds (20ms)
+    timing_error_threshold: 0.05   # seconds (50ms)
+
+# Platform-specific overrides
+platform_overrides:
+  windows:
+    sensor.load_cell.connection.port: "COM7"
+    actuator.motor.connection.device: "COM11"
+    policy.model_path: "C:/Users/sangu/Auto_Balancing_Case/suitcase_learning/trained_model/model_19999.pt"
+  
+  linux:
+    sensor.load_cell.connection.port: "/dev/ttyACM0"
+    actuator.motor.connection.device: "/dev/ttyUSB0"
+    policy.model_path: "/home/eric/custom/Auto_Balancing_Suitcase/suitcase_learning/trained_model/model_19999.pt"

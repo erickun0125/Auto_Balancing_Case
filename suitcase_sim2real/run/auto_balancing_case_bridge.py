@@ -16,55 +16,50 @@ from collections import deque
 
 from dynamixel_xl430_interface import DynamixelXL430Interface
 from hx711_interface import HX711LoadCellInterface
-
-@dataclass
-class AutoBalancingCaseConfig:
-    """Auto Balancing Case 설정"""
-    # Policy 설정
-    model_path: str
-    control_frequency: float = 50.0  # Hz (IsaacLab decimation=4, dt=0.005 -> 50Hz)
-    device: str = "cpu"
-    
-    # Hardware 설정 - Dual Motors
-    motor_ids: List[int] = None  # [1, 2] - 듀얼 모터 ID
-    motor_device: str = '/dev/ttyUSB0' # windows COM port 예: 'COM11' 나중에 바꾸기
-    motor_baudrate: int = 57600
-    
-    # Load cell 설정 - Arduino 기반
-    arduino_port: str = '/dev/ttyACM0'
-    arduino_baudrate: int = 115200
-    
-    # Observation history 설정 (IsaacLab에서 사용하는 history length)
-    obs_history_length: int = 4
-    
-    # 정규화 파라미터
-    max_wheel_force: float = 50.0  # N
-    max_handle_force: float = 20.0  # N
-    max_joint_angle: float = 0.5   # rad
-    max_joint_velocity: float = 6.0  # rad/s
-    
-    # Safety 설정
-    max_episode_steps: int = 400  # 50Hz * 8초 (IsaacLab episode_length_s=8.0과 일치)
-    emergency_angle_limit: float = 0.4  # rad (비상 정지 각도)
+from policy_interface import PolicyInterface, PolicyConfig
+from config_manager import ConfigManager
 
 class AutoBalancingCaseBridge:
     """Auto Balancing Case용 Sim2Real 브릿지"""
     
-    def __init__(self, config: AutoBalancingCaseConfig):
-        self.config = config
+    def __init__(self, config_path: Optional[str] = None):
+        # 설정 관리자 초기화
+        self.config_manager = ConfigManager(config_path)
         
-        # Policy 로드
-        self.policy = self._load_policy()
+        # 설정 유효성 검사
+        if not self.config_manager.validate_config():
+            raise ValueError("Configuration validation failed")
+        
+        # 각 인터페이스별 설정 참조
+        self.policy_config = self.config_manager.policy
+        self.sensor_config = self.config_manager.sensor
+        self.actuator_config = self.config_manager.actuator
+        self.system_config = self.config_manager.system
+        
+        # Policy 인터페이스 초기화
+        policy_config = PolicyConfig(
+            model_path=self.policy_config.model_path,
+            device=self.policy_config.device,
+            obs_history_length=self.policy_config.obs_history_length,
+            actor_hidden_dims=self.policy_config.actor_hidden_dims,
+            critic_hidden_dims=self.policy_config.critic_hidden_dims,
+            activation=self.policy_config.activation,
+            init_noise_std=self.policy_config.init_noise_std,
+            noise_std_type=self.policy_config.noise_std_type,
+            obs_dim_per_timestep=self.policy_config.obs_dim_per_timestep,
+            num_actions=self.policy_config.num_actions
+        )
+        self.policy_interface = PolicyInterface(policy_config)
         
         # Hardware interfaces 초기화
         self._initialize_hardware()
         
         # Observation history 초기화
-        self.obs_history = deque(maxlen=config.obs_history_length)
-        self.action_history = deque(maxlen=config.obs_history_length)
+        self.obs_history = deque(maxlen=self.policy_config.obs_history_length)
+        self.action_history = deque(maxlen=self.policy_config.obs_history_length)
         
         # 제어 주기 설정
-        self.control_dt = 1.0 / config.control_frequency
+        self.control_dt = 1.0 / self.policy_config.control_frequency
         
         # 상태 변수들
         self.episode_step = 0
@@ -72,24 +67,23 @@ class AutoBalancingCaseBridge:
         self.emergency_stop = False
         
         print("Auto Balancing Case Sim2Real Bridge 초기화 완료")
+        print("Config Summary:", self.config_manager.get_config_summary())
+        print("Policy Info:", self.policy_interface.get_model_info())
         
     def _initialize_hardware(self):
         """하드웨어 인터페이스 초기화"""
         # Dynamixel 듀얼 모터 초기화
-        if self.config.motor_ids is None:
-            self.config.motor_ids = [1, 2]  # 기본값: 모터 ID 1, 2
-            
         self.motor_interface = DynamixelXL430Interface(
-            motor_ids=self.config.motor_ids,
-            device_name=self.config.motor_device,
-            baudrate=self.config.motor_baudrate,
+            motor_ids=self.actuator_config.motor_ids,
+            device_name=self.actuator_config.device,
+            baudrate=self.actuator_config.baudrate,
             control_mode=DynamixelXL430Interface.POSITION_CONTROL_MODE
         )
         
         # Arduino 기반 Load cell 초기화
         self.load_cell_interface = HX711LoadCellInterface(
-            arduino_port=self.config.arduino_port,
-            baudrate=self.config.arduino_baudrate
+            arduino_port=self.sensor_config.port,
+            baudrate=self.sensor_config.baudrate
         )
         
         # 캘리브레이션 데이터 로드 시도
@@ -98,86 +92,6 @@ class AutoBalancingCaseBridge:
             print("Load cell 캘리브레이션 데이터 로드 완료")
         except:
             print("Warning: Load cell 캘리브레이션 데이터 없음. 캘리브레이션을 먼저 수행하세요.")
-    
-    def _load_policy(self) -> torch.nn.Module:
-        """Isaac Lab RSL-RL policy 로드"""
-        print(f"Loading policy from {self.config.model_path}")
-        
-        if not os.path.exists(self.config.model_path):
-            raise FileNotFoundError(f"Policy file not found: {self.config.model_path}")
-        
-        try:
-            # RSL-RL checkpoint 로드
-            checkpoint = torch.load(self.config.model_path, map_location=self.config.device)
-            
-            # RSL-RL 표준 구조에서 policy 추출
-            if 'model_state_dict' in checkpoint:
-                policy_state_dict = checkpoint['model_state_dict']
-            elif 'ac_weights' in checkpoint:
-                policy_state_dict = checkpoint['ac_weights']
-            elif 'policy_state_dict' in checkpoint:
-                policy_state_dict = checkpoint['policy_state_dict']
-            else:
-                # 직접 state_dict인 경우
-                policy_state_dict = checkpoint
-            
-            # Policy 네트워크 구조 생성 (IsaacLab RSL-RL 기본 구조)
-            policy = self._create_policy_network()
-            
-            # Actor 부분만 로드 (critic은 필요 없음)
-            actor_state_dict = {}
-            for key, value in policy_state_dict.items():
-                if 'actor' in key:
-                    # 'actor.' 접두사 제거
-                    new_key = key.replace('actor.', '')
-                    actor_state_dict[new_key] = value
-            
-            policy.load_state_dict(actor_state_dict, strict=False)
-            policy.eval()
-            
-            print("Policy loaded successfully")
-            return policy
-            
-        except Exception as e:
-            print(f"Policy loading error: {e}")
-            raise
-    
-    def _create_policy_network(self) -> torch.nn.Module:
-        """Policy 네트워크 구조 생성 (IsaacLab RSL-RL 기본 MLP 구조)"""
-        import torch.nn as nn
-        
-        # Observation dimensions 계산
-        # joint_pos (1) + joint_vel (1) + prev_action (1) + wheel_forces (4) + handle_force (1) = 8
-        # history_length=4이므로 총 8 * 4 = 32
-        obs_dim = 8 * self.config.obs_history_length
-        action_dim = 1  # 단일 밸런싱 조인트
-        
-        # IsaacLab RSL-RL PPO 기본 구조 (rsl_rl_ppo_cfg.py 참조)
-        hidden_dims = [256, 128, 64]
-        
-        class MLPActor(nn.Module):
-            def __init__(self, obs_dim, action_dim, hidden_dims):
-                super().__init__()
-                layers = []
-                in_dim = obs_dim
-                
-                for hidden_dim in hidden_dims:
-                    layers.extend([
-                        nn.Linear(in_dim, hidden_dim),
-                        nn.ELU()  # RSL-RL에서 사용하는 activation
-                    ])
-                    in_dim = hidden_dim
-                
-                layers.append(nn.Linear(in_dim, action_dim))
-                layers.append(nn.Tanh())  # action 범위 -1~1
-                
-                self.network = nn.Sequential(*layers)
-            
-            def forward(self, obs):
-                return self.network(obs)
-        
-        policy = MLPActor(obs_dim, action_dim, hidden_dims)
-        return policy
     
     def _get_current_observation(self) -> Dict[str, np.ndarray]:
         """현재 하드웨어 상태를 observation으로 변환"""
@@ -201,14 +115,14 @@ class AutoBalancingCaseBridge:
         else:
             prev_action = 0.0
         
-        # Observation 구성 (IsaacLab 환경과 동일한 구조)
+        # IsaacLab 환경과 동일한 observation 구조로 변환
         obs = {
-            'joint_pos': np.array([joint_pos_rad]),
-            'joint_vel': np.array([joint_vel_rad_s]),
-            'prev_action': np.array([prev_action]),
-            'wheel_forces': wheel_forces,
-            'handle_force': np.array([handle_force])
-        }
+            'joint_pos': np.array([joint_pos_rad]),           # 1차원 - 밸런싱 조인트 위치
+            'joint_vel': np.array([joint_vel_rad_s]),         # 1차원 - 밸런싱 조인트 속도  
+            'prev_action': np.array([prev_action]),           # 1차원 - 이전 액션
+            'wheel_contact_forces': wheel_forces,             # 4차원 - 4개 바퀴 접촉력 [FL, FR, RL, RR]
+            'handle_external_force': np.array([handle_force]) # 1차원 - 핸들 외부 힘
+        }  # 총 8차원 per timestep
         
         return obs
     
@@ -216,65 +130,35 @@ class AutoBalancingCaseBridge:
         """Observation 정규화 (IsaacLab 환경과 동일)"""
         normalized = {}
         
-        # Joint position: -max_angle ~ max_angle -> -1 ~ 1
-        normalized['joint_pos'] = obs['joint_pos'] / self.config.max_joint_angle
+        # Joint position: -max_angle ~ max_angle -> 정규화 (IsaacLab에서는 relative position 사용)
+        normalized['joint_pos'] = obs['joint_pos'] / self.policy_config.max_joint_angle
         
-        # Joint velocity: -max_velocity ~ max_velocity -> -1 ~ 1  
-        normalized['joint_vel'] = np.clip(obs['joint_vel'] / self.config.max_joint_velocity, -1.0, 1.0)
+        # Joint velocity: -max_velocity ~ max_velocity -> clipping  
+        normalized['joint_vel'] = np.clip(obs['joint_vel'] / self.policy_config.max_joint_velocity, -1.0, 1.0)
         
-        # Previous action: 이미 -1~1 범위
+        # Previous action: 이미 -1~1 범위 (hinge position command)
         normalized['prev_action'] = obs['prev_action']
         
-        # Wheel forces: 0 ~ max_force -> 0 ~ 1
-        normalized['wheel_forces'] = np.clip(obs['wheel_forces'] / self.config.max_wheel_force, 0.0, 1.0)
+        # Wheel contact forces: 0 ~ max_force -> 0 ~ 1
+        normalized['wheel_contact_forces'] = np.clip(obs['wheel_contact_forces'] / self.policy_config.max_wheel_force, 0.0, 1.0)
         
-        # Handle force: 0 ~ max_force -> 0 ~ 1
-        normalized['handle_force'] = np.clip(obs['handle_force'] / self.config.max_handle_force, 0.0, 1.0)
+        # Handle external force: 0 ~ max_force -> 0 ~ 1  
+        normalized['handle_external_force'] = np.clip(obs['handle_external_force'] / self.policy_config.max_handle_force, 0.0, 1.0)
         
         return normalized
-    
-    def _prepare_policy_input(self) -> torch.Tensor:
-        """Policy 입력을 위한 observation history 준비"""
-        if len(self.obs_history) == 0:
-            return None
-        
-        # History를 concatenate (가장 오래된 것부터 최신 순)
-        obs_vectors = []
-        for obs in self.obs_history:
-            # 각 observation을 벡터로 변환
-            obs_vector = np.concatenate([
-                obs['joint_pos'],      # 1
-                obs['joint_vel'],      # 1  
-                obs['prev_action'],    # 1
-                obs['wheel_forces'],   # 4
-                obs['handle_force']    # 1
-            ])  # 총 8차원
-            obs_vectors.append(obs_vector)
-        
-        # History가 부족한 경우 0으로 패딩
-        while len(obs_vectors) < self.config.obs_history_length:
-            obs_vectors.insert(0, np.zeros(8))
-        
-        # Concatenate all history
-        policy_input = np.concatenate(obs_vectors)  # 8 * 4 = 32차원
-        
-        # Convert to torch tensor
-        policy_input = torch.from_numpy(policy_input).float().unsqueeze(0)  # batch dimension 추가
-        
-        return policy_input.to(self.config.device)
     
     def _check_safety(self, obs: Dict[str, np.ndarray]) -> bool:
         """안전성 체크"""
         joint_angle = obs['joint_pos'][0]
         
         # 각도 제한 체크
-        if abs(joint_angle) > self.config.emergency_angle_limit:
-            print(f"Emergency stop: Joint angle {joint_angle:.3f} rad exceeds limit {self.config.emergency_angle_limit:.3f} rad")
+        if abs(joint_angle) > self.system_config.emergency_angle_limit:
+            print(f"Emergency stop: Joint angle {joint_angle:.3f} rad exceeds limit {self.system_config.emergency_angle_limit:.3f} rad")
             return False
         
         # 에피소드 길이 체크
-        if self.episode_step >= self.config.max_episode_steps:
-            print(f"Episode finished: Max steps {self.config.max_episode_steps} reached")
+        if self.episode_step >= self.system_config.max_episode_steps:
+            print(f"Episode finished: Max steps {self.system_config.max_episode_steps} reached")
             return False
         
         return True
@@ -301,7 +185,7 @@ class AutoBalancingCaseBridge:
         
         # 초기 observation history 구성
         print("Initializing observation history...")
-        for _ in range(self.config.obs_history_length):
+        for _ in range(self.policy_config.obs_history_length):
             obs = self._get_current_observation()
             normalized_obs = self._normalize_observation(obs)
             self.obs_history.append(normalized_obs)
@@ -326,33 +210,28 @@ class AutoBalancingCaseBridge:
                 # 3. Observation history 업데이트
                 self.obs_history.append(normalized_obs)
                 
-                # 4. Policy 입력 준비
-                policy_input = self._prepare_policy_input()
+                # 4. Policy 실행 (PolicyInterface 사용)
+                try:
+                    # observation history를 리스트로 변환
+                    obs_history_list = list(self.obs_history)
+                    action = self.policy_interface.predict(obs_history_list)
+                except Exception as e:
+                    print(f"Policy prediction error: {e}")
+                    action = 0.0  # 안전한 기본값
                 
-                # 5. Policy 실행
-                with torch.no_grad():
-                    action_tensor = self.policy(policy_input)
-                    action = action_tensor.squeeze().cpu().numpy()
-                    
-                    # Scalar action인 경우 처리
-                    if action.ndim == 0:
-                        action = float(action)
-                    else:
-                        action = action[0]
-                
-                # 6. Action history 업데이트
+                # 5. Action history 업데이트
                 self.action_history.append(action)
                 
-                # 7. Motor 명령 전송
+                # 6. Motor 명령 전송
                 # Action은 -1~1 범위이므로 각도로 변환
-                target_angle = action * self.config.max_joint_angle
+                target_angle = action * self.policy_config.max_joint_angle
                 self.motor_interface.set_angle_command(target_angle)
                 
-                # 8. 디버깅 정보 출력
+                # 7. 디버깅 정보 출력
                 if self.episode_step % 25 == 0:  # 0.5초마다 출력 (50Hz 기준)
                     current_angle = raw_obs['joint_pos'][0]
-                    wheel_forces = raw_obs['wheel_forces']
-                    handle_force = raw_obs['handle_force'][0]
+                    wheel_forces = raw_obs['wheel_contact_forces']
+                    handle_force = raw_obs['handle_external_force'][0]
                     
                     print(f"Step {self.episode_step:4d}: "
                           f"Angle={current_angle:+.3f}rad({current_angle*180/np.pi:+.1f}°) "
@@ -361,7 +240,7 @@ class AutoBalancingCaseBridge:
                           f"Wheels=[{wheel_forces[0]:.1f},{wheel_forces[1]:.1f},{wheel_forces[2]:.1f},{wheel_forces[3]:.1f}]N "
                           f"Handle={handle_force:.1f}N")
                 
-                # 9. 제어 주기 유지
+                # 8. 제어 주기 유지
                 elapsed = time.time() - step_start_time
                 sleep_time = self.control_dt - elapsed
                 if sleep_time > 0:
@@ -412,7 +291,7 @@ class AutoBalancingCaseBridge:
         
         # 초기 observation history 구성
         print("Initializing observation history...")
-        for _ in range(self.config.obs_history_length):
+        for _ in range(self.policy_config.obs_history_length):
             obs = self._get_current_observation()
             normalized_obs = self._normalize_observation(obs)
             self.obs_history.append(normalized_obs)
@@ -431,29 +310,26 @@ class AutoBalancingCaseBridge:
                 
                 # 안전성 체크 (각도만)
                 joint_angle = raw_obs['joint_pos'][0]
-                if abs(joint_angle) > self.config.emergency_angle_limit:
+                if abs(joint_angle) > self.system_config.emergency_angle_limit:
                     print(f"Emergency stop: Joint angle {joint_angle:.3f} rad exceeds limit")
                     break
                 
                 # Observation history 업데이트
                 self.obs_history.append(normalized_obs)
                 
-                # Policy 실행
-                policy_input = self._prepare_policy_input()
-                with torch.no_grad():
-                    action_tensor = self.policy(policy_input)
-                    action = action_tensor.squeeze().cpu().numpy()
-                    
-                    if action.ndim == 0:
-                        action = float(action)
-                    else:
-                        action = action[0]
+                # Policy 실행 (PolicyInterface 사용)
+                try:
+                    obs_history_list = list(self.obs_history)
+                    action = self.policy_interface.predict(obs_history_list)
+                except Exception as e:
+                    print(f"Policy prediction error: {e}")
+                    action = 0.0
                 
                 # Action history 업데이트
                 self.action_history.append(action)
                 
                 # Motor 명령 전송
-                target_angle = action * self.config.max_joint_angle
+                target_angle = action * self.policy_config.max_joint_angle
                 self.motor_interface.set_angle_command(target_angle)
                 
                 # 모니터링
@@ -500,19 +376,9 @@ class AutoBalancingCaseBridge:
 
 # 메인 실행 예제
 if __name__ == "__main__":
-    # 설정
-    config = AutoBalancingCaseConfig(
-        model_path="path/to/your/rsl_rl_checkpoint.pt",  # 실제 경로로 변경
-        control_frequency=50.0,
-        device="cpu",
-        motor_ids=[1, 2],  # 듀얼 모터
-        arduino_port="/dev/ttyACM0",  # Arduino 포트
-        obs_history_length=4,
-        max_episode_steps=1600
-    )
-    
-    # Bridge 초기화
-    bridge = AutoBalancingCaseBridge(config)
+    # ConfigManager를 사용한 Bridge 초기화
+    # 기본 config 파일 사용: config/interface_config.yml
+    bridge = AutoBalancingCaseBridge()
     
     try:
         # Load cell 캘리브레이션 (처음 한 번만)
