@@ -146,7 +146,7 @@ SUITECASE_CFG = ArticulationCfg(
             joint_names_expr=[BALANCE_JOINT_NAME],
             stiffness=20.0,
             damping=2.0,
-            effort_limit_sim=3.0,
+            effort_limit_sim=6.0,
             velocity_limit_sim=6,
         )
     },
@@ -456,13 +456,13 @@ class RewardsCfg:
     # (0) Surviving reward - 로봇이 살아있을 때마다 보상
     is_alive = RewTerm(
         func=mdp.is_alive,
-        weight=0.1,  # reward for staying alive
+        weight=1.0,  # reward for staying alive
     )
 
     # (-1) Termination penalty - 로봇이 죽을 때 penalty
     is_terminated = RewTerm(
         func=mdp.is_terminated,
-        weight=-50.0,  # large penalty for termination
+        weight=-100.0,  # large penalty for termination
     )
 
     # (1) ROOT_BASE_NAME이 수평을 최대한 유지하도록 - 기본 평면 orientation 유지

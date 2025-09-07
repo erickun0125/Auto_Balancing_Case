@@ -9,7 +9,7 @@ from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg, R
 class SuitecasePPORunnerCfg(RslRlOnPolicyRunnerCfg):
     num_steps_per_env = 24
     max_iterations = 15000
-    save_interval = 200
+    save_interval = 500
     experiment_name = "suitecase_flat"
     empirical_normalization = False
     policy = RslRlPpoActorCriticCfg(
