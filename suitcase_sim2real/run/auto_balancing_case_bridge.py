@@ -65,6 +65,7 @@ class AutoBalancingCaseBridge:
         self.episode_step = 0
         self.is_running = False
         self.emergency_stop = False
+        self.initial_joint_pos = 0.0  # Isaac Lab의 relative position 계산을 위한 초기 위치
         
         print("Auto Balancing Case Sim2Real Bridge 초기화 완료")
         print("Config Summary:", self.config_manager.get_config_summary())
@@ -94,7 +95,7 @@ class AutoBalancingCaseBridge:
             print("Warning: Load cell 캘리브레이션 데이터 없음. 캘리브레이션을 먼저 수행하세요.")
     
     def _get_current_observation(self) -> Dict[str, np.ndarray]:
-        """현재 하드웨어 상태를 observation으로 변환"""
+        """현재 하드웨어 상태를 observation으로 변환 (Isaac Lab 환경과 동일)"""
         # Motor observation
         motor_obs = self.motor_interface.get_observations()
         joint_pos_raw = motor_obs['joint_pos'][0]
@@ -115,52 +116,30 @@ class AutoBalancingCaseBridge:
         else:
             prev_action = 0.0
         
-        # IsaacLab 환경과 동일한 observation 구조로 변환
+        # Isaac Lab 환경과 동일한 observation 구조로 변환
+        # 중요: Isaac Lab에서는 joint_pos_rel을 사용하므로 초기 위치로부터의 상대 위치를 계산
+        relative_joint_pos = joint_pos_rad - self.initial_joint_pos
+        
         obs = {
-            'joint_pos': np.array([joint_pos_rad]),           # 1차원 - 밸런싱 조인트 위치
-            'joint_vel': np.array([joint_vel_rad_s]),         # 1차원 - 밸런싱 조인트 속도  
-            'prev_action': np.array([prev_action]),           # 1차원 - 이전 액션
-            'wheel_contact_forces': wheel_forces,             # 4차원 - 4개 바퀴 접촉력 [FL, FR, RL, RR]
-            'handle_external_force': np.array([handle_force]) # 1차원 - 핸들 외부 힘
+            'joint_pos': np.array([relative_joint_pos]),       # relative position (현재 - 초기위치)
+            'joint_vel': np.array([joint_vel_rad_s]),          # joint velocity 
+            'prev_action': np.array([prev_action]),            # 이전 액션 (이미 -0.5~0.5 범위)
+            'wheel_contact_forces': wheel_forces,              # 4차원 - 4개 바퀴 접촉력 [FL, FR, RL, RR]
+            'handle_external_force': np.array([handle_force])  # 1차원 - 핸들 외부 힘
         }  # 총 8차원 per timestep
         
         return obs
     
-    def _normalize_observation(self, obs: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
-        """Observation 정규화 (IsaacLab 환경과 동일)"""
-        normalized = {}
-        
-        # Joint position: -max_angle ~ max_angle -> 정규화 (IsaacLab에서는 relative position 사용)
-        normalized['joint_pos'] = obs['joint_pos'] / self.policy_config.max_joint_angle
-        
-        # Joint velocity: -max_velocity ~ max_velocity -> clipping  
-        normalized['joint_vel'] = np.clip(obs['joint_vel'] / self.policy_config.max_joint_velocity, -1.0, 1.0)
-        
-        # Previous action: 이미 -1~1 범위 (hinge position command)
-        normalized['prev_action'] = obs['prev_action']
-        
-        # Wheel contact forces: 0 ~ max_force -> 0 ~ 1
-        normalized['wheel_contact_forces'] = np.clip(obs['wheel_contact_forces'] / self.policy_config.max_wheel_force, 0.0, 1.0)
-        
-        # Handle external force: 0 ~ max_force -> 0 ~ 1  
-        normalized['handle_external_force'] = np.clip(obs['handle_external_force'] / self.policy_config.max_handle_force, 0.0, 1.0)
-        
-        return normalized
+    # 더 이상 사용되지 않음 - Isaac Lab에서는 observation을 정규화하지 않음
+    # def _normalize_observation(self, obs: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
+    #     """Observation 정규화 (사용되지 않음 - Isaac Lab은 raw 값 사용)"""
+    #     pass
     
-    def _check_safety(self, obs: Dict[str, np.ndarray]) -> bool:
-        """안전성 체크"""
-        joint_angle = obs['joint_pos'][0]
-        
-        # 각도 제한 체크
-        if abs(joint_angle) > self.system_config.emergency_angle_limit:
-            print(f"Emergency stop: Joint angle {joint_angle:.3f} rad exceeds limit {self.system_config.emergency_angle_limit:.3f} rad")
-            return False
-        
-        # 에피소드 길이 체크
+    def _check_episode_length(self) -> bool:
+        """에피소드 길이 체크"""
         if self.episode_step >= self.system_config.max_episode_steps:
             print(f"Episode finished: Max steps {self.system_config.max_episode_steps} reached")
             return False
-        
         return True
     
     def run_episode(self):
@@ -176,6 +155,10 @@ class AutoBalancingCaseBridge:
         self.motor_interface.set_angle_command(0.0)
         time.sleep(3.0)  # 초기 위치 도달 대기
         
+        # 초기 위치 저장 (Isaac Lab relative position 계산용)
+        self.initial_joint_pos = self.motor_interface.get_joint_angle_rad()
+        print(f"Initial joint position set to: {self.initial_joint_pos:.3f} rad")
+        
         # 상태 초기화
         self.episode_step = 0
         self.is_running = True
@@ -183,12 +166,11 @@ class AutoBalancingCaseBridge:
         self.obs_history.clear()
         self.action_history.clear()
         
-        # 초기 observation history 구성
+        # 초기 observation history 구성 (raw 값 사용, 정규화하지 않음)
         print("Initializing observation history...")
         for _ in range(self.policy_config.obs_history_length):
             obs = self._get_current_observation()
-            normalized_obs = self._normalize_observation(obs)
-            self.obs_history.append(normalized_obs)
+            self.obs_history.append(obs)  # raw 값 그대로 사용
             self.action_history.append(0.0)
             time.sleep(0.02)  # 20ms 대기
         
@@ -198,23 +180,33 @@ class AutoBalancingCaseBridge:
             while self.is_running and not self.emergency_stop:
                 step_start_time = time.time()
                 
-                # 1. 현재 상태 읽기
+                # 1. 현재 상태 읽기 (raw 값 사용, 정규화하지 않음)
                 raw_obs = self._get_current_observation()
-                normalized_obs = self._normalize_observation(raw_obs)
                 
-                # 2. 안전성 체크
-                if not self._check_safety(raw_obs):
+                # 2. 안전성 체크 (절대 위치 기준)
+                current_joint_pos_abs = self.motor_interface.get_joint_angle_rad()
+                if abs(current_joint_pos_abs) > self.system_config.emergency_angle_limit:
+                    print(f"Emergency stop: Joint angle {current_joint_pos_abs:.3f} rad exceeds limit {self.system_config.emergency_angle_limit:.3f} rad")
                     self.emergency_stop = True
                     break
                 
-                # 3. Observation history 업데이트
-                self.obs_history.append(normalized_obs)
+                # 에피소드 길이 체크
+                if not self._check_episode_length():
+                    self.emergency_stop = True
+                    break
+                
+                # 3. Observation history 업데이트 (정규화하지 않고 raw 값 사용)
+                self.obs_history.append(raw_obs)
                 
                 # 4. Policy 실행 (PolicyInterface 사용)
                 try:
-                    # observation history를 리스트로 변환
+                    # observation history를 리스트로 변환 (정규화하지 않고 raw 값 사용)
                     obs_history_list = list(self.obs_history)
-                    action = self.policy_interface.predict(obs_history_list)
+                    raw_action = self.policy_interface.predict(obs_history_list)
+                    
+                    # Isaac Lab과 동일한 action clipping 적용
+                    action = np.clip(raw_action, -0.5, 0.5)  # Isaac Lab의 clip 범위와 동일
+                    
                 except Exception as e:
                     print(f"Policy prediction error: {e}")
                     action = 0.0  # 안전한 기본값
@@ -223,20 +215,24 @@ class AutoBalancingCaseBridge:
                 self.action_history.append(action)
                 
                 # 6. Motor 명령 전송
-                # Action은 -1~1 범위이므로 각도로 변환
-                target_angle = action * self.policy_config.max_joint_angle
+                # Isaac Lab에서 action은 이미 -0.5~0.5 rad 범위로 clipping되어 나옴
+                # scale=1.0이고 clip={BALANCE_JOINT_NAME: (-0.5, 0.5)}이므로 그대로 사용
+                target_angle = action  # action은 이미 라디안 단위 (-0.5~0.5 rad)
                 self.motor_interface.set_angle_command(target_angle)
                 
                 # 7. 디버깅 정보 출력
                 if self.episode_step % 25 == 0:  # 0.5초마다 출력 (50Hz 기준)
-                    current_angle = raw_obs['joint_pos'][0]
+                    current_angle_abs = current_joint_pos_abs  # 절대 위치
+                    current_angle_rel = raw_obs['joint_pos'][0]  # 상대 위치 (정책에 전달되는 값)
                     wheel_forces = raw_obs['wheel_contact_forces']
                     handle_force = raw_obs['handle_external_force'][0]
                     
                     print(f"Step {self.episode_step:4d}: "
-                          f"Angle={current_angle:+.3f}rad({current_angle*180/np.pi:+.1f}°) "
+                          f"Abs={current_angle_abs:+.3f}rad({current_angle_abs*180/np.pi:+.1f}°) "
+                          f"Rel={current_angle_rel:+.3f}rad({current_angle_rel*180/np.pi:+.1f}°) "
+                          f"RawAction={raw_action:+.3f} "
+                          f"ClippedAction={action:+.3f} "
                           f"Target={target_angle:+.3f}rad({target_angle*180/np.pi:+.1f}°) "
-                          f"Action={action:+.3f} "
                           f"Wheels=[{wheel_forces[0]:.1f},{wheel_forces[1]:.1f},{wheel_forces[2]:.1f},{wheel_forces[3]:.1f}]N "
                           f"Handle={handle_force:.1f}N")
                 
@@ -284,17 +280,20 @@ class AutoBalancingCaseBridge:
         self.motor_interface.set_angle_command(0.0)
         time.sleep(3.0)
         
+        # 초기 위치 저장 (Isaac Lab relative position 계산용)
+        self.initial_joint_pos = self.motor_interface.get_joint_angle_rad()
+        print(f"Initial joint position set to: {self.initial_joint_pos:.3f} rad")
+        
         # 상태 초기화
         step_count = 0
         self.obs_history.clear()
         self.action_history.clear()
         
-        # 초기 observation history 구성
+        # 초기 observation history 구성 (raw 값 사용, 정규화하지 않음)
         print("Initializing observation history...")
         for _ in range(self.policy_config.obs_history_length):
             obs = self._get_current_observation()
-            normalized_obs = self._normalize_observation(obs)
-            self.obs_history.append(normalized_obs)
+            self.obs_history.append(obs)  # raw 값 그대로 사용
             self.action_history.append(0.0)
             time.sleep(0.02)
         
@@ -304,23 +303,26 @@ class AutoBalancingCaseBridge:
             while True:
                 step_start_time = time.time()
                 
-                # 현재 상태 읽기
+                # 현재 상태 읽기 (raw 값 사용, 정규화하지 않음)
                 raw_obs = self._get_current_observation()
-                normalized_obs = self._normalize_observation(raw_obs)
                 
-                # 안전성 체크 (각도만)
-                joint_angle = raw_obs['joint_pos'][0]
-                if abs(joint_angle) > self.system_config.emergency_angle_limit:
-                    print(f"Emergency stop: Joint angle {joint_angle:.3f} rad exceeds limit")
+                # 안전성 체크 (절대 위치 기준)
+                current_joint_pos_abs = self.motor_interface.get_joint_angle_rad()
+                if abs(current_joint_pos_abs) > self.system_config.emergency_angle_limit:
+                    print(f"Emergency stop: Joint angle {current_joint_pos_abs:.3f} rad exceeds limit")
                     break
                 
-                # Observation history 업데이트
-                self.obs_history.append(normalized_obs)
+                # Observation history 업데이트 (raw 값 사용)
+                self.obs_history.append(raw_obs)
                 
                 # Policy 실행 (PolicyInterface 사용)
                 try:
                     obs_history_list = list(self.obs_history)
-                    action = self.policy_interface.predict(obs_history_list)
+                    raw_action = self.policy_interface.predict(obs_history_list)
+                    
+                    # Isaac Lab과 동일한 action clipping 적용
+                    action = np.clip(raw_action, -0.5, 0.5)
+                    
                 except Exception as e:
                     print(f"Policy prediction error: {e}")
                     action = 0.0
@@ -329,16 +331,20 @@ class AutoBalancingCaseBridge:
                 self.action_history.append(action)
                 
                 # Motor 명령 전송
-                target_angle = action * self.policy_config.max_joint_angle
+                # Isaac Lab에서 action은 이미 -0.5~0.5 rad 범위로 clipping되어 나옴
+                target_angle = action  # action은 이미 라디안 단위 (-0.5~0.5 rad)
                 self.motor_interface.set_angle_command(target_angle)
                 
                 # 모니터링
                 if step_count % 50 == 0:  # 1초마다 출력
-                    current_angle = raw_obs['joint_pos'][0]
+                    current_angle_abs = current_joint_pos_abs  # 절대 위치
+                    current_angle_rel = raw_obs['joint_pos'][0]  # 상대 위치
                     print(f"Step {step_count}: "
-                          f"Angle={current_angle:+.3f}rad "
-                          f"Target={target_angle:+.3f}rad "
-                          f"Action={action:+.3f}")
+                          f"Abs={current_angle_abs:+.3f}rad "
+                          f"Rel={current_angle_rel:+.3f}rad "
+                          f"RawAction={raw_action:+.3f} "
+                          f"ClippedAction={action:+.3f} "
+                          f"Target={target_angle:+.3f}rad")
                 
                 # 제어 주기 유지
                 elapsed = time.time() - step_start_time
