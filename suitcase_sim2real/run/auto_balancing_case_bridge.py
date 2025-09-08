@@ -101,10 +101,10 @@ class AutoBalancingCaseBridge:
         joint_pos_rad = motor_state['position']     # 이미 라디안 단위
         joint_vel_rad_s = motor_state['velocity']   # 이미 라디안/초 단위
         
-        # Load cell observation
-        load_cell_obs = self.load_cell_interface.get_observations()
-        wheel_forces = load_cell_obs['wheel_forces']  # [FL, FR, RL, RR]
-        handle_force = load_cell_obs['handle_force'][0]
+        # Load cell state (새로운 통합 API 사용)
+        load_cell_state = self.load_cell_interface.get_state()
+        wheel_forces = load_cell_state['wheel_forces']  # [FR, RR, FL, RL] - IsaacLab 순서
+        handle_force = load_cell_state['handle_force'][0]
         
         # Previous action (마지막 action이 없으면 0으로 초기화)
         if len(self.action_history) > 0:
@@ -120,7 +120,7 @@ class AutoBalancingCaseBridge:
             'joint_pos': np.array([relative_joint_pos]),       # relative position (현재 - 초기위치)
             'joint_vel': np.array([joint_vel_rad_s]),          # joint velocity 
             'prev_action': np.array([prev_action]),            # 이전 액션 (이미 -0.5~0.5 범위)
-            'wheel_contact_forces': wheel_forces,              # 4차원 - 4개 바퀴 접촉력 [FL, FR, RL, RR]
+            'wheel_contact_forces': wheel_forces,              # 4차원 - 4개 바퀴 접촉력 [FR, RR, FL, RL] - IsaacLab 순서
             'handle_external_force': np.array([handle_force])  # 1차원 - 핸들 외부 힘
         }  # 총 8차원 per timestep
         
@@ -369,7 +369,7 @@ class AutoBalancingCaseBridge:
     def calibrate_load_cells(self):
         """Load cell 캘리브레이션 수행"""
         print("Starting load cell calibration...")
-        self.load_cell_interface.calibrate_all_load_cells(200.0)  # 1kg 추 사용
+        self.load_cell_interface.calibrate_all_load_cells(200.0)  # 200g 추 사용
         self.load_cell_interface.save_calibration()
     
     def shutdown(self):

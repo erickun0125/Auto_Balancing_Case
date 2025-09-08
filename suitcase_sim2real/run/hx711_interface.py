@@ -312,54 +312,31 @@ class HX711LoadCellInterface:
             if sleep_time > 0:
                 time.sleep(sleep_time)
     
-    def get_wheel_forces(self) -> np.ndarray:
-        """4개 바퀴의 force 값을 numpy 배열로 반환 (IsaacLab USD 순서: FR, RR, FL, RL)"""
+    def get_state(self) -> Dict[str, np.ndarray]:
+        """통합 상태 반환 함수 - wheel forces와 handle force 반환
+        
+        Returns:
+            Dict: wheel_forces (4개 바퀴, IsaacLab 순서: FR, RR, FL, RL)와 handle_force
+        """
+        # 4개 바퀴의 force 값 (IsaacLab USD 순서: FR, RR, FL, RL)
         wheel_names = ['wheel_FR', 'wheel_RR', 'wheel_FL', 'wheel_RL']
-        forces = []
+        wheel_forces = []
         
         for name in wheel_names:
             if name in self.calibrated_forces:
-                forces.append(abs(self.calibrated_forces[name]))  # 절댓값 사용
+                wheel_forces.append(abs(self.calibrated_forces[name]))  # 절댓값 사용
             else:
-                forces.append(0.0)
+                wheel_forces.append(0.0)
         
-        return np.array(forces)
-    ################################################################################################################################################
-    ################################################################################################################################################
-    def get_handle_force(self) -> float:
-        """손잡이의 force 값 반환"""
+        # 손잡이의 force 값 계산
+        # handle_1과 handle_2의 차이를 사용하여 외부 힘 계산
         handle_force = self.calibrated_forces['handle_1'] - (self.calibrated_forces['handle_1'] + self.calibrated_forces['handle_2']) / 2.0
-        return handle_force
-    ################################################################################################################################################
-    ################################################################################################################################################
-    def get_observations(self) -> Dict[str, np.ndarray]:
-        """RL Policy를 위한 observation 데이터 반환"""
+        
         return {
-            'wheel_forces': self.get_wheel_forces(),
-            'handle_force': np.array([self.get_handle_force()]),
-            'raw_forces': np.array(list(self.current_forces.values())),
-            'calibrated_forces': np.array(list(self.calibrated_forces.values()))
+            'wheel_forces': np.array(wheel_forces),
+            'handle_force': np.array([handle_force])
         }
     
-    def normalize_observations(self, obs: Dict[str, np.ndarray], 
-                             max_wheel_force: float = 50.0, 
-                             max_handle_force: float = 20.0) -> Dict[str, np.ndarray]:
-        """Observation을 RL에서 사용하는 정규화된 범위로 변환
-        
-        Args:
-            obs: 원본 observation
-            max_wheel_force: 바퀴 힘의 최대값 (정규화용)
-            max_handle_force: 손잡이 힘의 최대값 (정규화용)
-        """
-        normalized = {}
-        
-        # Wheel forces: 0~max_wheel_force -> 0~1
-        normalized['wheel_forces'] = np.clip(obs['wheel_forces'] / max_wheel_force, 0.0, 1.0)
-        
-        # Handle force: 0~max_handle_force -> 0~1  
-        normalized['handle_force'] = np.clip(obs['handle_force'] / max_handle_force, 0.0, 1.0)
-        
-        return normalized
     
     def save_calibration(self, filename: str = 'load_cell_calibration.npz'):
         """캘리브레이션 데이터 저장"""
@@ -467,13 +444,11 @@ if __name__ == "__main__":
         
         # 10초간 데이터 모니터링
         for i in range(100):
-            obs = load_cell_interface.get_observations()
-            normalized_obs = load_cell_interface.normalize_observations(obs)
+            state = load_cell_interface.get_state()
             
             print(f"Step {i}:")
-            print(f"  Wheel forces: {obs['wheel_forces']}")
-            print(f"  Handle force: {obs['handle_force'][0]:.2f}")
-            print(f"  Normalized wheels: {normalized_obs['wheel_forces']}")
+            print(f"  Wheel forces: {state['wheel_forces']}")
+            print(f"  Handle force: {state['handle_force'][0]:.2f}")
             time.sleep(0.1)
     
     finally:
