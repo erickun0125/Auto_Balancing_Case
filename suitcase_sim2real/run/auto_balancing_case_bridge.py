@@ -225,14 +225,14 @@ class AutoBalancingCaseBridge:
                     wheel_forces = raw_obs['wheel_contact_forces']
                     handle_force = raw_obs['handle_external_force'][0]
                     
-                    print(f"Step {self.episode_step:4d}: "
-                          f"Abs={current_angle_abs:+.3f}rad({current_angle_abs*180/np.pi:+.1f}°) "
-                          f"Rel={current_angle_rel:+.3f}rad({current_angle_rel*180/np.pi:+.1f}°) "
-                          f"RawAction={raw_action:+.3f} "
-                          f"ClippedAction={action:+.3f} "
-                          f"Target={target_angle:+.3f}rad({target_angle*180/np.pi:+.1f}°) "
-                          f"Wheels=[{wheel_forces[0]:.1f},{wheel_forces[1]:.1f},{wheel_forces[2]:.1f},{wheel_forces[3]:.1f}]N "
-                          f"Handle={handle_force:.1f}N")
+                    print(f"Step {self.episode_step:4d}:")
+                    print(f"  [POLICY INPUT] JointPos={current_angle_rel:+.3f}rad({current_angle_rel*180/np.pi:+.1f}°) "
+                          f"JointVel={raw_obs['joint_vel'][0]:+.3f}rad/s "
+                          f"PrevAction={raw_obs['prev_action'][0]:+.3f}")
+                    print(f"  [POLICY INPUT] WheelForces=[{wheel_forces[0]:.1f},{wheel_forces[1]:.1f},{wheel_forces[2]:.1f},{wheel_forces[3]:.1f}]N "
+                          f"HandleForce={handle_force:.1f}N")
+                    print(f"  [POLICY OUTPUT] RawAction={raw_action:+.3f} ClippedAction={action:+.3f} TargetAngle={target_angle:+.3f}rad({target_angle*180/np.pi:+.1f}°)")
+                    print(f"  [HARDWARE STATE] AbsJointPos={current_angle_abs:+.3f}rad({current_angle_abs*180/np.pi:+.1f}°)")
                 
                 # 8. 제어 주기 유지
                 elapsed = time.time() - step_start_time
@@ -339,12 +339,17 @@ class AutoBalancingCaseBridge:
                 if step_count % 50 == 0:  # 1초마다 출력
                     current_angle_abs = current_joint_pos_abs  # 절대 위치
                     current_angle_rel = raw_obs['joint_pos'][0]  # 상대 위치
-                    print(f"Step {step_count}: "
-                          f"Abs={current_angle_abs:+.3f}rad "
-                          f"Rel={current_angle_rel:+.3f}rad "
-                          f"RawAction={raw_action:+.3f} "
-                          f"ClippedAction={action:+.3f} "
-                          f"Target={target_angle:+.3f}rad")
+                    wheel_forces = raw_obs['wheel_contact_forces']
+                    handle_force = raw_obs['handle_external_force'][0]
+                    
+                    print(f"Step {step_count}:")
+                    print(f"  [POLICY INPUT] JointPos={current_angle_rel:+.3f}rad({current_angle_rel*180/np.pi:+.1f}°) "
+                          f"JointVel={raw_obs['joint_vel'][0]:+.3f}rad/s "
+                          f"PrevAction={raw_obs['prev_action'][0]:+.3f}")
+                    print(f"  [POLICY INPUT] WheelForces=[{wheel_forces[0]:.1f},{wheel_forces[1]:.1f},{wheel_forces[2]:.1f},{wheel_forces[3]:.1f}]N "
+                          f"HandleForce={handle_force:.1f}N")
+                    print(f"  [POLICY OUTPUT] RawAction={raw_action:+.3f} ClippedAction={action:+.3f} TargetAngle={target_angle:+.3f}rad({target_angle*180/np.pi:+.1f}°)")
+                    print(f"  [HARDWARE STATE] AbsJointPos={current_angle_abs:+.3f}rad({current_angle_abs*180/np.pi:+.1f}°)")
                 
                 # 제어 주기 유지
                 elapsed = time.time() - step_start_time
