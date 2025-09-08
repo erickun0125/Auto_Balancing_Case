@@ -66,19 +66,27 @@ sensor:
 
 # 3. Actuator Interface Configuration  
 actuator:
-  # Dynamixel Motor Interface
+  # Dynamixel Motor Interface (2-Port Setup)
   motor:
     type: "dynamixel_xl430"
     connection:
-      device: "/dev/ttyUSB0"  # Linux: "/dev/ttyUSB0", Windows: "COM11"
+      # 2개 포트 설정 (포트1: 모터[1,2], 포트2: 모터[3,4])
+      devices: 
+        - "/dev/ttyUSB0"  # Linux: 포트1, Windows: "COM11"
+        - "/dev/ttyUSB1"  # Linux: 포트2, Windows: "COM12"
       baudrate: 57600
       protocol_version: 2.0
       timeout: 1.0
     
-    # Motor configuration
+    # Motor configuration (포트별 그룹)
     motors:
-      balancing_joint:
-        ids: [1, 2]  # Dual motor setup
+      port1_motors:
+        ids: [1, 2]  # 포트1: 첫 2개 모터 (+theta)
+        control_mode: "position"  # "position", "velocity", "current"
+        profile_velocity: 50  # 0~1023 (0 = infinite velocity)
+        profile_acceleration: 20  # 0~32767
+      port2_motors:
+        ids: [3, 4]  # 포트2: 뒤 2개 모터 (-theta)
         control_mode: "position"  # "position", "velocity", "current"
         profile_velocity: 50  # 0~1023 (0 = infinite velocity)
         profile_acceleration: 20  # 0~32767
@@ -149,10 +157,10 @@ system:
 platform_overrides:
   windows:
     sensor.load_cell.connection.port: "COM7"
-    actuator.motor.connection.device: "COM11"
+    actuator.motor.connection.devices: ["COM11", "COM12"]  # Windows: 2개 포트
     policy.model_path: "C:/Users/sangu/Auto_Balancing_Case/suitcase_learning/trained_model/model_19999.pt"
   
   linux:
     sensor.load_cell.connection.port: "/dev/ttyACM0"
-    actuator.motor.connection.device: "/dev/ttyUSB0"
+    actuator.motor.connection.devices: ["/dev/ttyUSB0", "/dev/ttyUSB1"]  # Linux: 2개 포트
     policy.model_path: "/home/eric/custom/Auto_Balancing_Suitcase/suitcase_learning/trained_model/model_19999.pt"
