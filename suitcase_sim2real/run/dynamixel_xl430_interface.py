@@ -30,7 +30,7 @@ except ImportError:
     COMM_SUCCESS = 0
 
 class DynamixelXL430Interface:
-    """Auto Balancing Case용 XL430 듀얼 모터 인터페이스 (2개 모터로 구성된 밸런싱 조인트)"""
+    """Auto Balancing Case용 XL430 쿼드 모터 인터페이스 (4개 모터로 구성된 밸런싱 조인트)"""
     
     # XL430 Control Table Addresses (Protocol 2.0)
     ADDR_OPERATING_MODE = 11
@@ -59,13 +59,14 @@ class DynamixelXL430Interface:
     MAX_ANGLE_RAD = 0.5     # 최대 각도 (라디안, ±0.5rad = ±28.6도)
     POSITION_PER_RAD = POSITION_RANGE / (2 * np.pi)  # 1 라디안당 위치값
     
-    def __init__(self, motor_ids: list = [1, 2], device_name: str = 'COM11', 
+    def __init__(self, motor_ids: list = [1, 2, 3, 4], device_name: str = 'COM11', 
                  baudrate: int = 57600, control_mode: int = POSITION_CONTROL_MODE):
         """
-        Auto Balancing Case용 듀얼 모터 인터페이스
+        Auto Balancing Case용 쿼드 모터 인터페이스 (4개 모터)
         
         Args:
-            motor_ids: 밸런싱 모터 ID 리스트 (기본값: [1, 2])
+            motor_ids: 밸런싱 모터 ID 리스트 (기본값: [1, 2, 3, 4])
+                      첫 2개는 +theta, 뒤 2개는 -theta 제어
             device_name: 시리얼 포트 (Linux: /dev/ttyUSB0, Windows: COM3)
             baudrate: 통신 속도
             control_mode: 제어 모드 (위치/속도/전류)
@@ -78,7 +79,7 @@ class DynamixelXL430Interface:
         self.port_handler = PortHandler(device_name)
         self.packet_handler = PacketHandler(2.0)  # Protocol 2.0
         
-        # 상태 저장 변수들 (듀얼 모터)
+        # 상태 저장 변수들 (쿼드 모터)
         self.current_positions = {motor_id: 0.0 for motor_id in motor_ids}
         self.current_velocities = {motor_id: 0.0 for motor_id in motor_ids}
         self.current_currents = {motor_id: 0.0 for motor_id in motor_ids}
@@ -103,7 +104,7 @@ class DynamixelXL430Interface:
         print("Dynamixel 연결 성공")
     
     def _setup_motor(self):
-        """듀얼 밸런싱 모터 초기 설정 (올바른 순서)"""
+        """쿼드 밸런싱 모터 초기 설정 (올바른 순서)"""
         for motor_id in self.motor_ids:
             # 1. 먼저 토크 비활성화 (필수!)
             self._write_1byte(motor_id, self.ADDR_TORQUE_ENABLE, 0)  # 0 = 토크 비활성화
@@ -177,7 +178,7 @@ class DynamixelXL430Interface:
         while self.is_reading:
             start_time = time.time()
             
-            # 모든 밸런싱 모터의 현재 상태 읽기
+            # 모든 밸런싱 모터의 현재 상태 읽기 (4개 모터)
             for motor_id in self.motor_ids:
                 # Position 읽기 (4바이트, 0-4095)
                 pos = self._read_4byte(motor_id, self.ADDR_PRESENT_POSITION)
@@ -202,155 +203,77 @@ class DynamixelXL430Interface:
             if sleep_time > 0:
                 time.sleep(sleep_time)
     
-    def set_position_command(self, position: float):
-        """위치 명령 전송 (RL Policy의 action을 모터 명령으로 변환)
+    def set_command(self, action: float):
+        """통합 명령 전송 함수 - 4개 모터에 +@, -@ 분배
         
         Args:
-            position: 목표 위치 (0-4095 범위)
+            action: RL Policy의 action (라디안 단위, bridge에서 이미 clipping됨)
         """
-        # Position 범위 확인 및 클리핑
-        pos_cmd = int(np.clip(position, 0, self.POSITION_RANGE))
+        # 각도를 위치값으로 변환 (bridge에서 이미 clipping되었으므로 추가 clipping 불필요)
+        angle_rad = action
         
-        # 두 모터에 동일한 위치 명령 전송
-        for motor_id in self.motor_ids:
-            self._write_4byte(motor_id, self.ADDR_GOAL_POSITION, pos_cmd)
-            self.goal_positions[motor_id] = pos_cmd
-    
-    def set_angle_command(self, angle_rad: float):
-        """각도 명령 전송 (라디안 단위) - 듀얼 모터 +theta, -theta 제어
-        
-        Args:
-            angle_rad: 목표 각도 (라디안, -0.5~0.5 범위)
-        """
-        # 각도를 위치값으로 변환
-        angle_rad = np.clip(angle_rad, -self.MAX_ANGLE_RAD, self.MAX_ANGLE_RAD)
-        
-        # 첫 번째 모터: +theta, 두 번째 모터: -theta
+        # 4개 모터에 +theta, +theta, -theta, -theta 분배
         for i, motor_id in enumerate(self.motor_ids):
-            if i == 0:  # 첫 번째 모터 (+theta)
-                position = self.CENTER_POSITION + int(angle_rad * self.POSITION_PER_RAD)
-            else:  # 두 번째 모터 (-theta)
-                position = self.CENTER_POSITION - int(angle_rad * self.POSITION_PER_RAD)
+            if i < 2:  # 첫 2개 모터: +theta
+                position = int(self.CENTER_POSITION + angle_rad * self.POSITION_PER_RAD)
+            else:  # 뒤 2개 모터: -theta
+                position = int(self.CENTER_POSITION - angle_rad * self.POSITION_PER_RAD)
             
-            position = int(np.clip(position, 0, self.POSITION_RANGE))
+            # bridge에서 이미 action을 적절한 범위로 clipping했으므로 추가 clipping 불필요
+            # 단, 안전을 위해 하드웨어 한계값만 체크
+            if position < 0 or position > self.POSITION_RANGE:
+                print(f"Warning: Position {position} out of range [0, {self.POSITION_RANGE}] for motor {motor_id}")
+                position = max(0, min(position, self.POSITION_RANGE))
+            
             self._write_4byte(motor_id, self.ADDR_GOAL_POSITION, position)
             self.goal_positions[motor_id] = position
-    
-    def set_velocity_command(self, velocity: float):
-        """속도 명령 전송"""
-        if self.control_mode != self.VELOCITY_CONTROL_MODE:
-            print("Warning: 속도 제어 모드가 아닙니다")
-        
-        # Velocity 범위 확인 및 클리핑
-        vel_cmd = int(np.clip(velocity, 0, self.VELOCITY_RANGE))
-        for motor_id in self.motor_ids:
-            self._write_4byte(motor_id, self.ADDR_GOAL_VELOCITY, vel_cmd)
-    
-    def set_current_command(self, current: float):
-        """전류 명령 전송"""
-        if self.control_mode != self.CURRENT_CONTROL_MODE:
-            print("Warning: 전류 제어 모드가 아닙니다")
-        
-        # Current 범위 확인 및 클리핑
-        curr_cmd = int(np.clip(current, -self.CURRENT_RANGE, self.CURRENT_RANGE))
-        if curr_cmd < 0:
-            curr_cmd += 65536  # 2의 보수
-        for motor_id in self.motor_ids:
-            self._write_4byte(motor_id, self.ADDR_GOAL_CURRENT, curr_cmd)
 
-    # 이거 이상해... 수정해야해################################
-    def get_observations(self) -> Dict[str, np.ndarray]:
-        """RL Policy를 위한 observation 데이터 반환 듀얼 모터 중 + 값을 갖는 하나 사용"""
-        # 두 모터의 평균값을 사용하여 단일 조인트처럼 처리
-        #avg_position = np.mean(list(self.current_positions.values()))
-        #avg_velocity = np.mean(list(self.current_velocities.values()))
-        #avg_current = np.mean(list(self.current_currents.values()))
-        #avg_goal_position = np.mean(list(self.goal_positions.values()))
+    def get_state(self) -> Dict[str, float]:
+        """통합 상태 반환 함수 - 4개 모터의 평균값 계산 (-@ 모터도 +@로 간주)
         
-        # +theta 모터 (첫 번째 모터) 값 사용
-        avg_position = self.current_positions[self.motor_ids[0]]
-        avg_velocity = self.current_velocities[self.motor_ids[0]]
-        avg_current = self.current_currents[self.motor_ids[0]]
-        avg_goal_position = self.goal_positions[self.motor_ids[0]]
-
-        return {
-            'joint_pos': np.array([avg_position]),
-            'joint_vel': np.array([avg_velocity]), 
-            'joint_effort': np.array([avg_current]),
-            'joint_pos_target': np.array([avg_goal_position])
-        }
-    
-    # 이거 이상해... 수정해야해################################
-    # 이거 이상해... 수정해야해################################
-    # 이거 이상해... 수정해야해################################
-    # 이거 이상해... 수정해야해################################
-    def get_joint_angle_rad(self) -> float:
-        """현재 조인트 각도를 라디안으로 반환 (듀얼 모터의 평균값 사용)"""
-        # +theta 모터 (첫 번째 모터) 값 사용
-
-        #avg_position = np.mean(list(self.current_positions.values()))
-        avg_position = self.current_positions[self.motor_ids[0]]
-        angle_rad = (avg_position - self.CENTER_POSITION) / self.POSITION_PER_RAD
-        return angle_rad
-    
-    def get_joint_velocity_rad_s(self) -> float:
-        """현재 조인트 각속도를 라디안/초로 반환 (듀얼 모터의 평균값 사용)"""
-        # XL430의 velocity 단위를 라디안/초로 변환 (대략적인 변환)
-        # 실제 변환 계수는 모터 사양서를 참조하여 조정 필요
-        #avg_velocity = np.mean(list(self.current_velocities.values()))
-        # +theta 모터 (첫 번째 모터) 값 사용
-        avg_velocity = self.current_velocities[self.motor_ids[0]]
-        velocity_rad_s = avg_velocity * 0.01  # 임시 변환 계수
-        return velocity_rad_s
-    def normalize_observations(self, obs: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
-        """Observation을 RL에서 사용하는 정규화된 범위로 변환"""
-        normalized = {}
-        
-        # Position: 중앙 위치 기준으로 라디안 단위로 정규화
-        angle_rad = (obs['joint_pos'] - self.CENTER_POSITION) / self.POSITION_PER_RAD
-        normalized['joint_pos'] = angle_rad / self.MAX_ANGLE_RAD  # -1 to 1
-        
-        # Velocity: 라디안/초 단위로 정규화 (최대 각속도 기준)
-        max_angular_vel = 6.0  # 라디안/초 (조정 가능)
-        velocity_rad_s = obs['joint_vel'] * 0.01  # 임시 변환 계수
-        normalized['joint_vel'] = np.clip(velocity_rad_s / max_angular_vel, -1.0, 1.0)
-        
-        # Current: -1193~1193 -> -1 to 1  
-        normalized['joint_effort'] = obs['joint_effort'] / self.CURRENT_RANGE
-        
-        # Target position
-        target_angle_rad = (obs['joint_pos_target'] - self.CENTER_POSITION) / self.POSITION_PER_RAD
-        normalized['joint_pos_target'] = target_angle_rad / self.MAX_ANGLE_RAD
-        
-        return normalized
-    
-    def denormalize_actions(self, actions: np.ndarray) -> float:
-        """RL Policy의 정규화된 action을 실제 모터 명령으로 변환
-        
-        Args:
-            actions: 정규화된 action (-1~1, 라디안 기준)
-            
         Returns:
-            모터 위치 명령값 (0~4095)
+            Dict: position (라디안), velocity (라디안/초) 상태값
         """
-        if self.control_mode == self.POSITION_CONTROL_MODE:
-            # 정규화된 action을 라디안으로 변환 후 모터 위치로 변환
-            angle_rad = actions[0] * self.MAX_ANGLE_RAD  # -0.5~0.5 rad
-            position = self.CENTER_POSITION + int(angle_rad * self.POSITION_PER_RAD)
-            return np.clip(position, 0, self.POSITION_RANGE)
-        elif self.control_mode == self.VELOCITY_CONTROL_MODE:
-            # -1~1 -> 0~1023 (속도는 양수만)
-            return int(np.abs(actions[0]) * self.VELOCITY_RANGE)
-        elif self.control_mode == self.CURRENT_CONTROL_MODE:
-            # -1~1 -> -1193~1193
-            return int(actions[0] * self.CURRENT_RANGE)
+        # 4개 모터의 위치값을 +@로 통일하여 평균 계산
+        positions = []
+        velocities = []
+        
+        for i, motor_id in enumerate(self.motor_ids):
+            pos = self.current_positions[motor_id]
+            vel = self.current_velocities[motor_id]
+            
+            if i < 2:  # 첫 2개 모터: +theta (그대로 사용)
+                positions.append(pos)
+                velocities.append(vel)
+            else:  # 뒤 2개 모터: -theta (부호 반전하여 +@로 변환)
+                # -theta 모터의 위치를 +theta 기준으로 변환
+                # position = CENTER - angle*POSITION_PER_RAD 이므로
+                # angle = (CENTER - position) / POSITION_PER_RAD
+                # 이를 +theta로 변환하면: CENTER + angle*POSITION_PER_RAD
+                angle_from_center = (self.CENTER_POSITION - pos) / self.POSITION_PER_RAD
+                converted_pos = self.CENTER_POSITION + angle_from_center * self.POSITION_PER_RAD
+                positions.append(converted_pos)
+                velocities.append(-vel)  # 속도도 부호 반전
+        
+        # 평균값 계산
+        avg_position = np.mean(positions)
+        avg_velocity = np.mean(velocities)
+        
+        # 라디안 단위로 변환
+        angle_rad = (avg_position - self.CENTER_POSITION) / self.POSITION_PER_RAD
+        velocity_rad_s = avg_velocity * 0.01  # 임시 변환 계수 (모터 사양서 참조 필요)
+        
+        return {
+            'position': angle_rad,
+            'velocity': velocity_rad_s
+        }
     
     def shutdown(self):
         """정리 및 종료"""
         try:
             self.stop_real_time_reading()
             
-            # 모든 모터를 중앙 위치로 이동 후 토크 비활성화
+            # 모든 모터를 중앙 위치로 이동 후 토크 비활성화 (4개 모터)
             for motor_id in self.motor_ids:
                 self._write_4byte(motor_id, self.ADDR_GOAL_POSITION, self.CENTER_POSITION)
             time.sleep(1.0)
@@ -364,18 +287,18 @@ class DynamixelXL430Interface:
             # 포트 강제 종료
             if hasattr(self, 'port_handler') and self.port_handler:
                 self.port_handler.closePort()
-            print("Dynamixel 듀얼 모터 인터페이스 종료")
+            print("Dynamixel 쿼드 모터 인터페이스 종료")
 
 # 사용 예제
 if __name__ == "__main__":
-    # Auto Balancing Case용 듀얼 모터 예제
-    motor_ids = [1, 2]
+    # Auto Balancing Case용 쿼드 모터 예제
+    motor_ids = [1, 2, 3, 4]
     
     # 하드웨어 인터페이스 초기화
     hw_interface = DynamixelXL430Interface(
         motor_ids=motor_ids,
         device_name='/dev/ttyUSB0',  # Linux 
-        # device_name='COM3',        # Windows 이거는 나중에
+        # device_name='COM3',        # Windows
         control_mode=DynamixelXL430Interface.POSITION_CONTROL_MODE
     )
     
@@ -388,15 +311,16 @@ if __name__ == "__main__":
         
         for angle in test_angles:
             print(f"목표 각도: {angle:.2f} rad ({angle*180/np.pi:.1f}도)")
-            hw_interface.set_angle_command(angle)
+            hw_interface.set_command(angle)
             
             # 2초간 상태 모니터링
             for i in range(20):
-                obs = hw_interface.get_observations()
-                normalized_obs = hw_interface.normalize_observations(obs)
-                current_angle = hw_interface.get_joint_angle_rad()
+                state = hw_interface.get_state()
+                current_angle = state['position']
+                current_velocity = state['velocity']
                 
-                print(f"  현재 각도: {current_angle:.3f} rad ({current_angle*180/np.pi:.1f}도)")
+                print(f"  현재 각도: {current_angle:.3f} rad ({current_angle*180/np.pi:.1f}도), "
+                      f"속도: {current_velocity:.3f} rad/s")
                 time.sleep(0.1)
             
             time.sleep(1.0)

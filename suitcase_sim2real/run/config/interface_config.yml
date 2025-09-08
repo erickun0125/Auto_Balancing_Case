@@ -4,7 +4,7 @@
 # 1. Policy Interface Configuration
 policy:
   # Model settings
-  model_path: "/home/eric/custom/Auto_Balancing_Suitcase/suitcase_learning/trained_model/model_19999.pt"
+  model_path: "/home/eric/custom/Auto_Balancing_Suitcase/suitcase_learning/trained_model_new/model_49999.pt"
   device: "cpu"  # "cpu" or "cuda"
   
   # Network architecture (실제 학습된 모델과 일치해야 함)

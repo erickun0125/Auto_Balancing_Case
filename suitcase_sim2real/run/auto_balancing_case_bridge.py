@@ -96,14 +96,10 @@ class AutoBalancingCaseBridge:
     
     def _get_current_observation(self) -> Dict[str, np.ndarray]:
         """현재 하드웨어 상태를 observation으로 변환 (Isaac Lab 환경과 동일)"""
-        # Motor observation
-        motor_obs = self.motor_interface.get_observations()
-        joint_pos_raw = motor_obs['joint_pos'][0]
-        joint_vel_raw = motor_obs['joint_vel'][0]
-        
-        # 라디안 단위로 변환
-        joint_pos_rad = self.motor_interface.get_joint_angle_rad()
-        joint_vel_rad_s = self.motor_interface.get_joint_velocity_rad_s()
+        # Motor state (새로운 통합 API 사용)
+        motor_state = self.motor_interface.get_state()
+        joint_pos_rad = motor_state['position']     # 이미 라디안 단위
+        joint_vel_rad_s = motor_state['velocity']   # 이미 라디안/초 단위
         
         # Load cell observation
         load_cell_obs = self.load_cell_interface.get_observations()
@@ -152,11 +148,12 @@ class AutoBalancingCaseBridge:
         
         # 초기 위치로 이동 (중앙 위치)
         print("Moving to center position...")
-        self.motor_interface.set_angle_command(0.0)
+        self.motor_interface.set_command(0.0)
         time.sleep(3.0)  # 초기 위치 도달 대기
         
         # 초기 위치 저장 (Isaac Lab relative position 계산용)
-        self.initial_joint_pos = self.motor_interface.get_joint_angle_rad()
+        motor_state = self.motor_interface.get_state()
+        self.initial_joint_pos = motor_state['position']
         print(f"Initial joint position set to: {self.initial_joint_pos:.3f} rad")
         
         # 상태 초기화
@@ -184,7 +181,8 @@ class AutoBalancingCaseBridge:
                 raw_obs = self._get_current_observation()
                 
                 # 2. 안전성 체크 (절대 위치 기준)
-                current_joint_pos_abs = self.motor_interface.get_joint_angle_rad()
+                motor_state = self.motor_interface.get_state()
+                current_joint_pos_abs = motor_state['position']
                 if abs(current_joint_pos_abs) > self.system_config.emergency_angle_limit:
                     print(f"Emergency stop: Joint angle {current_joint_pos_abs:.3f} rad exceeds limit {self.system_config.emergency_angle_limit:.3f} rad")
                     self.emergency_stop = True
@@ -218,7 +216,7 @@ class AutoBalancingCaseBridge:
                 # Isaac Lab에서 action은 이미 -0.5~0.5 rad 범위로 clipping되어 나옴
                 # scale=1.0이고 clip={BALANCE_JOINT_NAME: (-0.5, 0.5)}이므로 그대로 사용
                 target_angle = action  # action은 이미 라디안 단위 (-0.5~0.5 rad)
-                self.motor_interface.set_angle_command(target_angle)
+                self.motor_interface.set_command(target_angle)
                 
                 # 7. 디버깅 정보 출력
                 if self.episode_step % 25 == 0:  # 0.5초마다 출력 (50Hz 기준)
@@ -258,7 +256,7 @@ class AutoBalancingCaseBridge:
             print("Episode finished. Shutting down...")
             
             # 안전한 위치로 이동
-            self.motor_interface.set_angle_command(0.0)
+            self.motor_interface.set_command(0.0)
             time.sleep(2.0)
             
             # Hardware 정지
@@ -277,11 +275,12 @@ class AutoBalancingCaseBridge:
         
         # 초기 위치로 이동
         print("Moving to center position...")
-        self.motor_interface.set_angle_command(0.0)
+        self.motor_interface.set_command(0.0)
         time.sleep(3.0)
         
         # 초기 위치 저장 (Isaac Lab relative position 계산용)
-        self.initial_joint_pos = self.motor_interface.get_joint_angle_rad()
+        motor_state = self.motor_interface.get_state()
+        self.initial_joint_pos = motor_state['position']
         print(f"Initial joint position set to: {self.initial_joint_pos:.3f} rad")
         
         # 상태 초기화
@@ -307,7 +306,8 @@ class AutoBalancingCaseBridge:
                 raw_obs = self._get_current_observation()
                 
                 # 안전성 체크 (절대 위치 기준)
-                current_joint_pos_abs = self.motor_interface.get_joint_angle_rad()
+                motor_state = self.motor_interface.get_state()
+                current_joint_pos_abs = motor_state['position']
                 if abs(current_joint_pos_abs) > self.system_config.emergency_angle_limit:
                     print(f"Emergency stop: Joint angle {current_joint_pos_abs:.3f} rad exceeds limit")
                     break
@@ -333,7 +333,7 @@ class AutoBalancingCaseBridge:
                 # Motor 명령 전송
                 # Isaac Lab에서 action은 이미 -0.5~0.5 rad 범위로 clipping되어 나옴
                 target_angle = action  # action은 이미 라디안 단위 (-0.5~0.5 rad)
-                self.motor_interface.set_angle_command(target_angle)
+                self.motor_interface.set_command(target_angle)
                 
                 # 모니터링
                 if step_count % 50 == 0:  # 1초마다 출력
@@ -359,7 +359,7 @@ class AutoBalancingCaseBridge:
         
         finally:
             # 안전한 위치로 이동
-            self.motor_interface.set_angle_command(0.0)
+            self.motor_interface.set_command(0.0)
             time.sleep(2.0)
             
             # Hardware 정지
