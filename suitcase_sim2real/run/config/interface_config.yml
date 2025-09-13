@@ -111,7 +111,7 @@ system:
   safety:
     emergency_stop:
       enabled: true
-      angle_limit: 0.4  # rad (비상 정지 각도)
+      angle_limit: 0.51  # rad (비상 정지 각도)
       force_limit: 100.0  # N (비상 정지 힘)
     
     watchdog:
@@ -120,7 +120,7 @@ system:
   
   # Episode/Session settings
   session:
-    max_episode_steps: 400  # 50Hz * 8초 (IsaacLab episode_length_s=8.0)
+    max_episode_steps: 4000  # 50Hz * 8초 (IsaacLab episode_length_s=8.0)
     episode_timeout: 8.0    # seconds
     auto_reset: true
   
@@ -150,9 +150,9 @@ platform_overrides:
   windows:
     sensor.load_cell.connection.port: "COM7"
     actuator.motor.connection.device: "COM11"
-    policy.model_path: "C:/Users/sangu/Auto_Balancing_Case/suitcase_learning/trained_model/model_19999.pt"
+    policy.model_path: "C:/Users/sangu/Auto_Balancing_Case/suitcase_learning/trained_model_new/model_49999.pt"
   
   linux:
     sensor.load_cell.connection.port: "/dev/ttyACM0"
     actuator.motor.connection.device: "/dev/ttyUSB0"
-    policy.model_path: "/home/eric/custom/Auto_Balancing_Suitcase/suitcase_learning/trained_model/model_19999.pt"
+    policy.model_path: "/home/eric/custom/Auto_Balancing_Suitcase/suitcase_learning/trained_model_new/model_49999.pt"

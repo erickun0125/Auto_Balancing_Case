@@ -88,7 +88,7 @@ class DynamixelXL430Interface:
         # 실시간 읽기를 위한 변수들
         self.is_reading = False
         self.read_thread = None
-        self.read_frequency = 20  # Hz
+        self.read_frequency = 50  # Hz
         
         self._initialize_connection()
         self._setup_motor()

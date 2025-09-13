@@ -51,7 +51,7 @@ class HX711LoadCellInterface:
         # 실시간 읽기를 위한 변수들
         self.is_reading = False
         self.read_thread = None
-        self.read_frequency = 10  # Hz
+        self.read_frequency = 50  # Hz
         
         # 캘리브레이션을 위한 변수들
         self.zero_offsets = {name: 0.0 for name in self.load_cell_names}
