@@ -65,15 +65,17 @@ class SensorInterfaceConfig:
 
 @dataclass
 class ActuatorInterfaceConfig:
-    """Actuator Interface 설정"""
-    # Motor connection
-    device: str = "/dev/ttyUSB0"
+    """Actuator Interface 설정 (2포트, 4모터)"""
+    # Motor connection (2개 포트)
+    devices: list = field(default_factory=lambda: ["/dev/ttyUSB0", "/dev/ttyUSB1"])
     baudrate: int = 57600
     protocol_version: float = 2.0
     timeout: float = 1.0
     
-    # Motor configuration
-    motor_ids: list = field(default_factory=lambda: [1, 2])
+    # Motor configuration (4개 모터, 포트별 그룹)
+    port1_motor_ids: list = field(default_factory=lambda: [1, 2])  # 포트1 모터
+    port2_motor_ids: list = field(default_factory=lambda: [3, 4])  # 포트2 모터
+    all_motor_ids: list = field(default_factory=lambda: [1, 2, 3, 4])  # 전체 모터 리스트
     control_mode: str = "position"
     profile_velocity: int = 50
     profile_acceleration: int = 20
@@ -236,26 +238,40 @@ class ConfigManager:
         )
     
     def _create_actuator_config(self) -> ActuatorInterfaceConfig:
-        """Actuator Interface 설정 객체 생성"""
+        """Actuator Interface 설정 객체 생성 (2포트, 4모터)"""
         actuator_cfg = self.raw_config.get('actuator', {})
         motor_cfg = actuator_cfg.get('motor', {})
         conn_cfg = motor_cfg.get('connection', {})
         motors_cfg = motor_cfg.get('motors', {})
+        
+        # 새로운 구조: port1_motors, port2_motors
+        port1_cfg = motors_cfg.get('port1_motors', {})
+        port2_cfg = motors_cfg.get('port2_motors', {})
+        
+        # 하위 호환성을 위해 기존 balancing_joint 설정도 지원
         balancing_cfg = motors_cfg.get('balancing_joint', {})
+        
         limits_cfg = motor_cfg.get('limits', {})
         control_cfg = motor_cfg.get('control', {})
         pid_cfg = control_cfg.get('pid_gains', {})
         monitor_cfg = control_cfg.get('monitoring', {})
         
+        # 포트별 모터 ID 추출
+        port1_ids = port1_cfg.get('ids', balancing_cfg.get('ids', [1, 2])[:2])  # 첫 2개
+        port2_ids = port2_cfg.get('ids', [3, 4])  # 뒤 2개
+        all_ids = port1_ids + port2_ids
+        
         return ActuatorInterfaceConfig(
-            device=conn_cfg.get('device', '/dev/ttyUSB0'),
+            devices=conn_cfg.get('devices', ['/dev/ttyUSB0', '/dev/ttyUSB1']),
             baudrate=conn_cfg.get('baudrate', 57600),
             protocol_version=conn_cfg.get('protocol_version', 2.0),
             timeout=conn_cfg.get('timeout', 1.0),
-            motor_ids=balancing_cfg.get('ids', [1, 2]),
-            control_mode=balancing_cfg.get('control_mode', 'position'),
-            profile_velocity=balancing_cfg.get('profile_velocity', 50),
-            profile_acceleration=balancing_cfg.get('profile_acceleration', 20),
+            port1_motor_ids=port1_ids,
+            port2_motor_ids=port2_ids,
+            all_motor_ids=all_ids,
+            control_mode=port1_cfg.get('control_mode', balancing_cfg.get('control_mode', 'position')),
+            profile_velocity=port1_cfg.get('profile_velocity', balancing_cfg.get('profile_velocity', 50)),
+            profile_acceleration=port1_cfg.get('profile_acceleration', balancing_cfg.get('profile_acceleration', 20)),
             position_limit_min=limits_cfg.get('position_limit', {}).get('min', -0.5),
             position_limit_max=limits_cfg.get('position_limit', {}).get('max', 0.5),
             velocity_limit=limits_cfg.get('velocity_limit', 6.0),
@@ -318,8 +334,10 @@ class ConfigManager:
                 "baudrate": self.sensor.baudrate
             },
             "actuator": {
-                "device": self.actuator.device,
-                "motor_ids": self.actuator.motor_ids
+                "devices": self.actuator.devices,
+                "port1_motor_ids": self.actuator.port1_motor_ids,
+                "port2_motor_ids": self.actuator.port2_motor_ids,
+                "all_motor_ids": self.actuator.all_motor_ids
             },
             "system": {
                 "max_episode_steps": self.system.max_episode_steps,
@@ -372,5 +390,8 @@ if __name__ == "__main__":
     # 개별 설정 접근 예제
     print(f"\nPolicy model path: {config_manager.policy.model_path}")
     print(f"Sensor port: {config_manager.sensor.port}")
-    print(f"Motor IDs: {config_manager.actuator.motor_ids}")
+    print(f"Motor devices: {config_manager.actuator.devices}")
+    print(f"Port1 Motor IDs: {config_manager.actuator.port1_motor_ids}")
+    print(f"Port2 Motor IDs: {config_manager.actuator.port2_motor_ids}")
+    print(f"All Motor IDs: {config_manager.actuator.all_motor_ids}")
     print(f"Emergency angle limit: {config_manager.system.emergency_angle_limit}")

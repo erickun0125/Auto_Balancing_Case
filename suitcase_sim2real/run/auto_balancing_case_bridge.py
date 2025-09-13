@@ -72,11 +72,11 @@ class AutoBalancingCaseBridge:
         print("Policy Info:", self.policy_interface.get_model_info())
         
     def _initialize_hardware(self):
-        """하드웨어 인터페이스 초기화"""
-        # Dynamixel 듀얼 모터 초기화
+        """하드웨어 인터페이스 초기화 (2포트, 4모터)"""
+        # Dynamixel 쿼드 모터 초기화 (2포트)
         self.motor_interface = DynamixelXL430Interface(
-            motor_ids=self.actuator_config.motor_ids,
-            device_name=self.actuator_config.device,
+            motor_ids=self.actuator_config.all_motor_ids,
+            device_names=self.actuator_config.devices,
             baudrate=self.actuator_config.baudrate,
             control_mode=DynamixelXL430Interface.POSITION_CONTROL_MODE
         )
