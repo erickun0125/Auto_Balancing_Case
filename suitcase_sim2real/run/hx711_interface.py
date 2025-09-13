@@ -330,7 +330,7 @@ class HX711LoadCellInterface:
         
         # 손잡이의 force 값 계산
         # handle_1과 handle_2의 차이를 사용하여 외부 힘 계산
-        handle_force = self.calibrated_forces['handle_1'] - (self.calibrated_forces['handle_1'] + self.calibrated_forces['handle_2']) / 2.0
+        handle_force = abs(self.calibrated_forces['handle_1'] - (self.calibrated_forces['handle_1'] + self.calibrated_forces['handle_2']) / 2.0)
         
         return {
             'wheel_forces': np.array(wheel_forces),
