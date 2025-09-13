@@ -59,24 +59,30 @@ class DynamixelXL430Interface:
     MAX_ANGLE_RAD = 0.5     # 최대 각도 (라디안, ±0.5rad = ±28.6도)
     POSITION_PER_RAD = POSITION_RANGE / (2 * np.pi)  # 1 라디안당 위치값
     
-    def __init__(self, motor_ids: list = [1, 2, 3, 4], device_name: str = 'COM11', 
+    def __init__(self, motor_ids: list = [1, 2, 3, 4], 
+                 device_names: list = ['/dev/ttyUSB0', '/dev/ttyUSB1'], 
                  baudrate: int = 57600, control_mode: int = POSITION_CONTROL_MODE):
         """
-        Auto Balancing Case용 쿼드 모터 인터페이스 (4개 모터)
+        Auto Balancing Case용 쿼드 모터 인터페이스 (4개 모터, 2개 포트)
         
         Args:
             motor_ids: 밸런싱 모터 ID 리스트 (기본값: [1, 2, 3, 4])
                       첫 2개는 +theta, 뒤 2개는 -theta 제어
-            device_name: 시리얼 포트 (Linux: /dev/ttyUSB0, Windows: COM3)
+            device_names: 시리얼 포트 리스트 (Linux: ['/dev/ttyUSB0', '/dev/ttyUSB1'], Windows: ['COM11', 'COM12'])
             baudrate: 통신 속도
             control_mode: 제어 모드 (위치/속도/전류)
         """
         self.motor_ids = motor_ids
         self.control_mode = control_mode
-
+        
+        # 포트별 모터 그룹 분리 (포트1: [1,2], 포트2: [3,4])
+        self.port1_motors = motor_ids[:2]  # [1, 2]
+        self.port2_motors = motor_ids[2:]  # [3, 4]
+        
         self.port_lock = threading.Lock()
-        # SDK 초기화
-        self.port_handler = PortHandler(device_name)
+        # SDK 초기화 - 2개 포트
+        self.port_handler1 = PortHandler(device_names[0])  # 포트1: 모터 [1,2]
+        self.port_handler2 = PortHandler(device_names[1])  # 포트2: 모터 [3,4]
         self.packet_handler = PacketHandler(2.0)  # Protocol 2.0
         
         # 상태 저장 변수들 (쿼드 모터)
@@ -94,60 +100,100 @@ class DynamixelXL430Interface:
         self._setup_motor()
     
     def _initialize_connection(self):
-        """시리얼 연결 초기화"""
-        if not self.port_handler.openPort():
-            raise RuntimeError("포트 열기 실패")
+        """시리얼 연결 초기화 (2개 포트)"""
+        # 포트1 초기화 (모터 [1,2])
+        if not self.port_handler1.openPort():
+            raise RuntimeError(f"포트1 열기 실패: {self.port_handler1}")
         
-        if not self.port_handler.setBaudRate(57600):
-            raise RuntimeError("Baudrate 설정 실패")
+        if not self.port_handler1.setBaudRate(57600):
+            raise RuntimeError("포트1 Baudrate 설정 실패")
         
-        print("Dynamixel 연결 성공")
+        # 포트2 초기화 (모터 [3,4])
+        if not self.port_handler2.openPort():
+            raise RuntimeError(f"포트2 열기 실패: {self.port_handler2}")
+        
+        if not self.port_handler2.setBaudRate(57600):
+            raise RuntimeError("포트2 Baudrate 설정 실패")
+        
+        print("Dynamixel 2포트 연결 성공")
     
     def _setup_motor(self):
-        """쿼드 밸런싱 모터 초기 설정 (올바른 순서)"""
-        for motor_id in self.motor_ids:
+        """쿼드 밸런싱 모터 초기 설정 (포트별로 설정)"""
+        # 포트1 모터들 설정 (모터 [1,2])
+        for motor_id in self.port1_motors:
             # 1. 먼저 토크 비활성화 (필수!)
-            self._write_1byte(motor_id, self.ADDR_TORQUE_ENABLE, 0)  # 0 = 토크 비활성화
+            self._write_1byte(motor_id, self.ADDR_TORQUE_ENABLE, 0, port_handler=self.port_handler1)
             time.sleep(0.01)  # 설정 안정화 대기
             
             # 2. 제어 모드 설정 (토크 비활성화 상태에서만 가능)
-            self._write_1byte(motor_id, self.ADDR_OPERATING_MODE, self.control_mode)
+            self._write_1byte(motor_id, self.ADDR_OPERATING_MODE, self.control_mode, port_handler=self.port_handler1)
             time.sleep(0.01)
             
             # 3. 토크 활성화
-            self._write_1byte(motor_id, self.ADDR_TORQUE_ENABLE, 1)  # 1 = 토크 활성화
+            self._write_1byte(motor_id, self.ADDR_TORQUE_ENABLE, 1, port_handler=self.port_handler1)
             time.sleep(0.01)
             
             # 4. 중앙 위치로 이동 (토크 활성화 후)
-            self._write_4byte(motor_id, self.ADDR_GOAL_POSITION, self.CENTER_POSITION)
+            self._write_4byte(motor_id, self.ADDR_GOAL_POSITION, self.CENTER_POSITION, port_handler=self.port_handler1)
             
-            print(f"밸런싱 모터 {motor_id} 초기화 완료 (중앙 위치: {self.CENTER_POSITION})")
+            print(f"밸런싱 모터 {motor_id} (포트1) 초기화 완료 (중앙 위치: {self.CENTER_POSITION})")
+        
+        # 포트2 모터들 설정 (모터 [3,4])
+        for motor_id in self.port2_motors:
+            # 1. 먼저 토크 비활성화 (필수!)
+            self._write_1byte(motor_id, self.ADDR_TORQUE_ENABLE, 0, port_handler=self.port_handler2)
+            time.sleep(0.01)  # 설정 안정화 대기
+            
+            # 2. 제어 모드 설정 (토크 비활성화 상태에서만 가능)
+            self._write_1byte(motor_id, self.ADDR_OPERATING_MODE, self.control_mode, port_handler=self.port_handler2)
+            time.sleep(0.01)
+            
+            # 3. 토크 활성화
+            self._write_1byte(motor_id, self.ADDR_TORQUE_ENABLE, 1, port_handler=self.port_handler2)
+            time.sleep(0.01)
+            
+            # 4. 중앙 위치로 이동 (토크 활성화 후)
+            self._write_4byte(motor_id, self.ADDR_GOAL_POSITION, self.CENTER_POSITION, port_handler=self.port_handler2)
+            
+            print(f"밸런싱 모터 {motor_id} (포트2) 초기화 완료 (중앙 위치: {self.CENTER_POSITION})")
     
-    def _write_1byte(self, motor_id: int, address: int, value: int):
+    def _write_1byte(self, motor_id: int, address: int, value: int, port_handler=None):
         """1바이트 데이터 쓰기 (스레드 안전)"""
+        if port_handler is None:
+            # 모터 ID에 따라 적절한 포트 핸들러 선택
+            port_handler = self.port_handler1 if motor_id in self.port1_motors else self.port_handler2
+        
         with self.port_lock:  # 뮤텍스 사용
             result, error = self.packet_handler.write1ByteTxRx(
-                self.port_handler, motor_id, address, value)
+                port_handler, motor_id, address, value)
             if result != COMM_SUCCESS:
                 print(f"Write error: {self.packet_handler.getTxRxResult(result)}")
             if error != 0:
                 print(f"Hardware error: {self.packet_handler.getRxPacketError(error)}")
 
-    def _write_4byte(self, motor_id: int, address: int, value: int):
+    def _write_4byte(self, motor_id: int, address: int, value: int, port_handler=None):
         """4바이트 데이터 쓰기 (스레드 안전)"""
+        if port_handler is None:
+            # 모터 ID에 따라 적절한 포트 핸들러 선택
+            port_handler = self.port_handler1 if motor_id in self.port1_motors else self.port_handler2
+        
         with self.port_lock:  # 뮤텍스 사용
             result, error = self.packet_handler.write4ByteTxRx(
-                self.port_handler, motor_id, address, value)
+                port_handler, motor_id, address, value)
             if result != COMM_SUCCESS:
                 print(f"Write error: {self.packet_handler.getTxRxResult(result)}")
             if error != 0:
                 print(f"Hardware error: {self.packet_handler.getRxPacketError(error)}")
     
-    def _read_4byte(self, motor_id: int, address: int) -> int:
+    def _read_4byte(self, motor_id: int, address: int, port_handler=None) -> int:
         """4바이트 데이터 읽기 (스레드 안전)"""
+        if port_handler is None:
+            # 모터 ID에 따라 적절한 포트 핸들러 선택
+            port_handler = self.port_handler1 if motor_id in self.port1_motors else self.port_handler2
+        
         with self.port_lock:  # 뮤텍스 사용
             value, result, error = self.packet_handler.read4ByteTxRx(
-                self.port_handler, motor_id, address)
+                port_handler, motor_id, address)
             if result != COMM_SUCCESS:
                 print(f"Read error: {self.packet_handler.getTxRxResult(result)}")
                 return 0
@@ -284,21 +330,23 @@ class DynamixelXL430Interface:
         except Exception as e:
             print(f"Shutdown error: {e}")
         finally:
-            # 포트 강제 종료
-            if hasattr(self, 'port_handler') and self.port_handler:
-                self.port_handler.closePort()
-            print("Dynamixel 쿼드 모터 인터페이스 종료")
+            # 2개 포트 모두 강제 종료
+            if hasattr(self, 'port_handler1') and self.port_handler1:
+                self.port_handler1.closePort()
+            if hasattr(self, 'port_handler2') and self.port_handler2:
+                self.port_handler2.closePort()
+            print("Dynamixel 쿼드 모터 인터페이스 종료 (2포트)")
 
 # 사용 예제
 if __name__ == "__main__":
     # Auto Balancing Case용 쿼드 모터 예제
     motor_ids = [1, 2, 3, 4]
     
-    # 하드웨어 인터페이스 초기화
+    # 하드웨어 인터페이스 초기화 (2개 포트)
     hw_interface = DynamixelXL430Interface(
         motor_ids=motor_ids,
-        device_name='/dev/ttyUSB0',  # Linux 
-        # device_name='COM3',        # Windows
+        device_names=['/dev/ttyUSB0', '/dev/ttyUSB1'],  # Linux: 2개 포트
+        # device_names=['COM11', 'COM12'],              # Windows: 2개 포트
         control_mode=DynamixelXL430Interface.POSITION_CONTROL_MODE
     )
     
