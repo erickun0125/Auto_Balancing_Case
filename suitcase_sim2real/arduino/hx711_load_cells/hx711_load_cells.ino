@@ -66,7 +66,6 @@ void setup() {
     while (1);
   }
   
-  Serial.println("READY");
 }
 
 void loop() {
