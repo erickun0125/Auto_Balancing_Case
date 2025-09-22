@@ -9,7 +9,7 @@ import torch.nn as nn
 from torch.distributions import Normal
 import numpy as np
 import os
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 from dataclasses import dataclass
 
 
@@ -263,6 +263,39 @@ class PolicyInterface:
             "total_parameters": sum(p.numel() for p in self.policy.parameters())
         }
 
+
+class PolicyInterfaceDemo:
+
+    def prepare_policy_input(self, obs_history: List[Dict[str, np.ndarray]]) -> Tuple[np.ndarray, np.ndarray]:
+        """Observation history를 policy 입력으로 변환"""
+        if len(obs_history) == 0:
+            raise ValueError("Observation history is empty")
+        
+        # theta_t: 최신 step의 joint_pos
+        last_obs = obs_history[-1]
+        theta_t = last_obs['joint_pos']
+
+        # delta_f: 최근 4 step의 handle_external_force 평균 (부족하면 존재하는 만큼 평균)
+        recent_obs = obs_history[-4:]
+        recent_forces = np.stack([obs['handle_external_force'] for obs in recent_obs], axis=0)
+        delta_f = recent_forces.mean(axis=0)
+
+        return theta_t, delta_f
+    
+    def predict(self, obs_history: List[Dict[str, np.ndarray]]) -> float:
+        """Policy prediction (inference)"""
+        # Policy 입력 준비
+        theta_t, delta_f  = self.prepare_policy_input(obs_history)
+        
+        k_p = 0.0001
+        
+        # 스칼라 보장 (형상 불일치/ndarray 반환을 방지)
+        theta_t_scalar = float(np.asarray(theta_t).reshape(-1)[0])
+        delta_f_scalar = float(np.asarray(delta_f).mean())
+        
+        action = theta_t_scalar + k_p * delta_f_scalar
+        
+        return action
 
 # 테스트용 메인 함수
 if __name__ == "__main__":

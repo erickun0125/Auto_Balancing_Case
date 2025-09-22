@@ -16,7 +16,7 @@ from collections import deque
 
 from dynamixel_xl430_interface import DynamixelXL430Interface
 from hx711_interface import HX711LoadCellInterface
-from policy_interface import PolicyInterface, PolicyConfig
+from policy_interface import PolicyInterface, PolicyConfig, PolicyInterfaceDemo
 from config_manager import ConfigManager
 
 class AutoBalancingCaseBridge:
@@ -50,6 +50,7 @@ class AutoBalancingCaseBridge:
             num_actions=self.policy_config.num_actions
         )
         self.policy_interface = PolicyInterface(policy_config)
+        self.policy_interface_for_demo = PolicyInterfaceDemo()
         
         # Hardware interfaces 초기화
         self._initialize_hardware()
@@ -104,6 +105,10 @@ class AutoBalancingCaseBridge:
         # Load cell state (새로운 통합 API 사용)
         load_cell_state = self.load_cell_interface.get_state()
         wheel_forces = load_cell_state['wheel_forces']  # [FR, RR, FL, RL] - IsaacLab 순서
+
+        # DEMO VER
+        wheel_forces = [14.0, 14.0, 14.0, 14.0]
+
         handle_force = load_cell_state['handle_force'][0]
         
         # Previous action (마지막 action이 없으면 0으로 초기화)
@@ -371,6 +376,135 @@ class AutoBalancingCaseBridge:
             self.motor_interface.stop_real_time_reading()
             self.load_cell_interface.stop_real_time_reading()
     
+    def demo(self):
+        """데모 실행"""
+        print("Starting Auto Balancing Case demo...")
+        
+        # Hardware 시작
+        self.motor_interface.start_real_time_reading()
+        self.load_cell_interface.start_real_time_reading()
+        
+        # 초기 위치로 이동 (중앙 위치)
+        print("Moving to center position...")
+        self.motor_interface.set_command(0.0)
+        time.sleep(3.0)  # 초기 위치 도달 대기
+        
+        # 초기 위치 저장 (Isaac Lab relative position 계산용)
+        motor_state = self.motor_interface.get_state()
+        self.initial_joint_pos = motor_state['position']
+        print(f"Initial joint position set to: {self.initial_joint_pos:.3f} rad")
+        
+        # 상태 초기화
+        self.episode_step = 0
+        self.is_running = True
+        self.emergency_stop = False
+        self.obs_history.clear()
+        self.action_history.clear()
+        
+        # 초기 observation history 구성 (raw 값 사용, 정규화하지 않음)
+        print("Initializing observation history...")
+        for _ in range(self.policy_config.obs_history_length):
+            obs = self._get_current_observation()
+            self.obs_history.append(obs)  # raw 값 그대로 사용
+            self.action_history.append(0.0)
+            time.sleep(0.02)  # 20ms 대기
+        
+        print("Episode started!")
+        
+        try:
+            while self.is_running and not self.emergency_stop:
+                step_start_time = time.time()
+                
+                # 1. 현재 상태 읽기 (raw 값 사용, 정규화하지 않음)
+                raw_obs = self._get_current_observation()
+                
+                # 2. 안전성 체크 (절대 위치 기준)
+                motor_state = self.motor_interface.get_state()
+                current_joint_pos_abs = motor_state['position']
+                if abs(current_joint_pos_abs) > self.system_config.emergency_angle_limit:
+                    print(f"Emergency stop: Joint angle {current_joint_pos_abs:.3f} rad exceeds limit {self.system_config.emergency_angle_limit:.3f} rad")
+                    self.emergency_stop = True
+                    break
+                
+                # 에피소드 길이 체크
+                if not self._check_episode_length():
+                    self.emergency_stop = True
+                    break
+                
+                # 3. Observation history 업데이트 (정규화하지 않고 raw 값 사용)
+                self.obs_history.append(raw_obs)
+                
+                # 4. Policy 실행 (PolicyInterface 사용)
+                try:
+                    # observation history를 리스트로 변환 (정규화하지 않고 raw 값 사용)
+                    obs_history_list = list(self.obs_history)
+                    raw_action = self.policy_interface_for_demo.predict(obs_history_list)
+                    
+                    # Isaac Lab과 동일한 action clipping 적용
+                    action = np.clip(raw_action, -0.5, 0.5)  # Isaac Lab의 clip 범위와 동일
+                    
+                except Exception as e:
+                    print(f"Policy prediction error: {e}")
+                    action = 0.0  # 안전한 기본값
+                
+                # 5. Action history 업데이트
+                self.action_history.append(action)
+                
+                # 6. Motor 명령 전송
+                # Isaac Lab에서 action은 이미 -0.5~0.5 rad 범위로 clipping되어 나옴
+                # scale=1.0이고 clip={BALANCE_JOINT_NAME: (-0.5, 0.5)}이므로 그대로 사용
+                target_angle = action  # action은 이미 라디안 단위 (-0.5~0.5 rad)
+                self.motor_interface.set_command(target_angle)
+                
+                # 7. 디버깅 정보 출력
+                if self.episode_step % 5 == 0:  # 0.5초마다 출력 (50Hz 기준)
+                    current_angle_abs = current_joint_pos_abs  # 절대 위치
+                    current_angle_rel = raw_obs['joint_pos'][0]  # 상대 위치 (정책에 전달되는 값)
+                    wheel_forces = raw_obs['wheel_contact_forces']
+                    handle_force = raw_obs['handle_external_force'][0]
+                    
+                    print(f"Step {self.episode_step:4d}:")
+                    print(f"  [POLICY INPUT] JointPos={current_angle_rel:+.3f}rad({current_angle_rel*180/np.pi:+.1f}°) "
+                          f"JointVel={raw_obs['joint_vel'][0]:+.3f}rad/s "
+                          f"PrevAction={raw_obs['prev_action'][0]:+.3f}")
+                    print(f"  [POLICY INPUT] WheelForces=[{wheel_forces[0]:.1f},{wheel_forces[1]:.1f},{wheel_forces[2]:.1f},{wheel_forces[3]:.1f}]N "
+                          f"HandleForce={handle_force:.1f}N")
+                    print(f"  [POLICY OUTPUT] RawAction={raw_action:+.3f} ClippedAction={action:+.3f} TargetAngle={target_angle:+.3f}rad({target_angle*180/np.pi:+.1f}°)")
+                    print(f"  [HARDWARE STATE] AbsJointPos={current_angle_abs:+.3f}rad({current_angle_abs*180/np.pi:+.1f}°)")
+                
+                # 8. 제어 주기 유지
+                elapsed = time.time() - step_start_time
+                sleep_time = self.control_dt - elapsed
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
+                elif sleep_time < -0.01:  # 10ms 이상 지연 시 경고
+                    print(f"Warning: Control loop delay: {-sleep_time:.3f}s")
+                
+                self.episode_step += 1
+        
+        except KeyboardInterrupt:
+            print("\nEpisode interrupted by user")
+            self.emergency_stop = True
+        
+        except Exception as e:
+            print(f"Episode error: {e}")
+            self.emergency_stop = True
+        
+        finally:
+            print("Episode finished. Shutting down...")
+            
+            # 안전한 위치로 이동
+            self.motor_interface.set_command(0.0)
+            time.sleep(2.0)
+            
+            # Hardware 정지
+            self.motor_interface.stop_real_time_reading()
+            self.load_cell_interface.stop_real_time_reading()
+            
+            print(f"Episode completed: {self.episode_step} steps")
+
+
+
     def calibrate_load_cells(self):
         """Load cell 캘리브레이션 수행"""
         print("Starting load cell calibration...")
