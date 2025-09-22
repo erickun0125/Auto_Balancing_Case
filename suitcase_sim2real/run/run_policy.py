@@ -90,6 +90,11 @@ def main():
             print("Ctrl+C로 중단할 때까지 계속 실행됩니다.")
             input("시작하려면 Enter를 누르세요...")
             bridge.run_continuous()
+
+        elif args.mode == 'demo':
+            print("=== 데모 모드 ===")
+            input("시작하려면 Enter를 누르세요...")
+            bridge.demo()
     
     except KeyboardInterrupt:
         print("\n사용자에 의해 중단되었습니다.")
