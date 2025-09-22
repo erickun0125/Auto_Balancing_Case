@@ -24,7 +24,7 @@ def main():
     parser = argparse.ArgumentParser(description='Auto Balancing Case Sim2Real Policy Runner')
     parser.add_argument('--config', '-c', type=str, default='config/interface_config.yml',
                         help='설정 파일 경로 (기본값: config/interface_config.yml)')
-    parser.add_argument('--mode', '-m', type=str, choices=['episode', 'continuous', 'calibrate'], 
+    parser.add_argument('--mode', '-m', type=str, choices=['episode', 'continuous', 'calibrate', 'demo'], 
                         default='calibrate',
                         help='실행 모드: episode(한 에피소드), continuous(연속), calibrate(캘리브레이션)')
     

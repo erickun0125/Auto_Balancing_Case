@@ -81,12 +81,12 @@ actuator:
     # Motor configuration (포트별 그룹)
     motors:
       port1_motors:
-        ids: [1, 2]  # 포트1: 첫 2개 모터 (+theta)
+        ids: [2, 4]  # 포트1: 첫 2개 모터 (+theta)
         control_mode: "position"  # "position", "velocity", "current"
         profile_velocity: 50  # 0~1023 (0 = infinite velocity)
         profile_acceleration: 20  # 0~32767
       port2_motors:
-        ids: [3, 4]  # 포트2: 뒤 2개 모터 (-theta)
+        ids: [1, 3]  # 포트2: 뒤 2개 모터 (-theta)
         control_mode: "position"  # "position", "velocity", "current"
         profile_velocity: 50  # 0~1023 (0 = infinite velocity)
         profile_acceleration: 20  # 0~32767
@@ -157,7 +157,7 @@ system:
 platform_overrides:
   windows:
     sensor.load_cell.connection.port: "COM7"
-    actuator.motor.connection.devices: ["COM11", "COM12"]  # Windows: 2개 포트
+    actuator.motor.connection.devices: ["COM8", "COM11"]  # Windows: 2개 포트
     policy.model_path: "C:/Users/sangu/Auto_Balancing_Case/suitcase_learning/trained_model_new/model_49999.pt"
   
   linux:
