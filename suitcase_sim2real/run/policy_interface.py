@@ -289,11 +289,13 @@ class PolicyInterfaceDemo:
         
         k_p = 0.0001
         
-        # 스칼라 보장 (형상 불일치/ndarray 반환을 방지)
         theta_t_scalar = float(np.asarray(theta_t).reshape(-1)[0])
         delta_f_scalar = float(np.asarray(delta_f).mean())
+        if (abs(delta_f_scalar) > 1000):
+            action = theta_t_scalar + k_p * delta_f_scalar
         
-        action = theta_t_scalar + k_p * delta_f_scalar
+        else:
+            action = 0
         
         return action
 
