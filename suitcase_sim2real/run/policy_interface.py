@@ -295,7 +295,19 @@ class PolicyInterfaceDemo:
             action = theta_t_scalar + k_p * delta_f_scalar
         
         else:
-            action = 0
+            # 진동 방지: 3도 이하면 현재 각도를 유지 (데드밴드)
+            deadband_rad = np.deg2rad(3.0)
+            if abs(theta_t_scalar) <= deadband_rad:
+                action = theta_t_scalar
+            else:
+                # 0을 향해 1도(라디안)씩 근접하도록 액션 설정
+                step_rad = np.deg2rad(1.0)
+                if theta_t_scalar > 0.0:
+                    action = max(0.0, theta_t_scalar - step_rad)
+                elif theta_t_scalar < 0.0:
+                    action = min(0.0, theta_t_scalar + step_rad)
+                else:
+                    action = 0.0
         
         return action
 
