@@ -9,7 +9,19 @@
 ![License](https://img.shields.io/badge/License-MIT-blue)
 
 <p align="center">
-  <em>Demo video/GIF coming soon — add to <code>docs/media/</code></em>
+  <img src="figures/abc.png" alt="Auto Balancing Case — overview" width="80%" />
+</p>
+
+## Motivation
+
+Conventional wheeled suitcases tilt forward on carpets, ramps, and uneven terrain, forcing users to apply excessive **wrist torque** to keep them upright. This increases fatigue during prolonged travel and makes handling uncomfortable — yet most existing solutions rely on complex vision-based systems or powered wheels that add weight and cost.
+
+This project takes a different approach: instead of fighting gravity with brute force, we **shift the suitcase's center of mass** in real time using a learned policy, eliminating the need for additional user effort entirely.
+
+<p align="center">
+  <img src="figures/slide0.png" alt="Presentation slide 1" width="32%" />
+  <img src="figures/slide1.png" alt="Presentation slide 2" width="32%" />
+  <img src="figures/slide2.png" alt="Presentation slide 3" width="32%" />
 </p>
 
 ## Highlights
@@ -23,9 +35,12 @@
 
 ## Table of Contents
 
+- [Motivation](#motivation)
 - [System Overview](#system-overview)
 - [Architecture](#architecture)
 - [Technical Deep Dive](#technical-deep-dive)
+- [Results](#results)
+- [Future Work](#future-work)
 - [Getting Started](#getting-started)
 - [Usage](#usage)
 - [Project Structure](#project-structure)
@@ -36,7 +51,13 @@
 
 ## System Overview
 
-The Auto Balancing Case learns to keep a wheeled suitcase upright against external disturbances using a single actuated hinge joint between the base platform and the luggage body. A PPO policy is trained in NVIDIA Isaac Lab simulation across 2,048 parallel environments, then deployed directly on real hardware via a Python bridge running at 50 Hz — no fine-tuning on real hardware required.
+### Core Idea — Mass-Shifting Upper Body
+
+Rather than adding powered wheels or complex stabilization mechanisms, the suitcase features a **mass-shifting upper body** connected to the wheeled base via a single revolute (hinge) joint. When the suitcase begins to tilt — due to a ramp, carpet, or user push — a learned RL policy commands the upper body to shift its center of gravity rearward, **preventing the initial tip and eliminating the wrist torque** the user would otherwise need to apply.
+
+### End-to-End Pipeline
+
+The Auto Balancing Case learns to keep the suitcase upright against external disturbances using this single actuated hinge joint. A PPO policy is trained in NVIDIA Isaac Lab simulation across 2,048 parallel environments, then deployed directly on real hardware via a Python bridge running at 50 Hz — no fine-tuning on real hardware required.
 
 ```mermaid
 graph LR
@@ -51,6 +72,13 @@ graph LR
 ## Architecture
 
 ### System Architecture
+
+<p align="center">
+  <img src="figures/diagram_architecture.png" alt="System architecture block diagram" width="80%" />
+</p>
+
+<details>
+<summary>Text version (Mermaid)</summary>
 
 ```mermaid
 graph TB
@@ -74,6 +102,7 @@ graph TB
 
     POLICY -.->|".pt checkpoint"| PI
 ```
+</details>
 
 ### Observation Space
 
@@ -107,6 +136,12 @@ Each timestep produces an 8-dimensional observation. With 4-step history, the po
 
 ### Sim-to-Real Transfer
 
+<p align="center">
+  <img src="figures/demo_simulation.gif" alt="Isaac Lab training — 2048 parallel environments" width="70%" />
+  <br/>
+  <em>PPO training in NVIDIA Isaac Lab with 2,048 parallel environments</em>
+</p>
+
 The policy transfers from simulation to real hardware without fine-tuning. Key strategies:
 
 - **Domain randomization**: 4 disturbance groups applied to partitioned environment subsets
@@ -118,6 +153,10 @@ The policy transfers from simulation to real hardware without fine-tuning. Key s
 - **Observation noise injection**: Additive uniform noise on joint position (±0.005), velocity (±0.05), and forces (±0.01)
 
 ### Real-Time Control Pipeline
+
+<p align="center">
+  <img src="figures/diagram_control_flow.png" alt="50 Hz real-time control flow" width="75%" />
+</p>
 
 The 50 Hz control loop in `AutoBalancingCaseBridge` executes 7 steps per cycle (20 ms budget):
 
@@ -133,11 +172,44 @@ The 50 Hz control loop in `AutoBalancingCaseBridge` executes 7 steps per cycle (
 
 ### Hardware Design
 
+<p align="center">
+  <img src="figures/cad_assembly.png" alt="CAD assembly design" width="60%" />
+</p>
+
+<p align="center">
+  <img src="figures/hardware0.png" alt="Hardware photo 1" width="45%" />
+  <img src="figures/hardware1.png" alt="Hardware photo 2" width="45%" />
+</p>
+
+<p align="center">
+  <img src="figures/hardware2.png" alt="Hardware photo 3" width="60%" />
+</p>
+
 - **Base platform**: 4-wheel mobile base (~0.98 kg, 36 cm × 23 cm)
 - **Luggage body**: ~5.6 kg connected via single revolute joint (Y-axis, ±30°)
 - **Motors**: 4× Dynamixel XL430-W250 (Protocol 2.0, 57600 baud, center=2048)
 - **Sensors**: 5× HX711 load cells (4 wheel + 1 handle), Arduino at 115200 baud / 10 Hz
 - **Custom parts**: 3D-printed differential bevel gears, motor support, gearbox wing
+
+## Results
+
+<p align="center">
+  <img src="figures/demo_real.gif" alt="Real hardware demo — self-balancing on uneven terrain" width="70%" />
+  <br/>
+  <em>Real-time balancing on uneven terrain — zero additional wrist torque required</em>
+</p>
+
+- **Zero additional wrist torque** — users reported no need for extra effort to keep the suitcase upright on rough terrain
+- **Responsive disturbance recovery** — the policy reacts to pushes and slope changes within one control cycle (20 ms)
+- **Direct sim-to-real transfer** — the trained policy deployed on real hardware without any fine-tuning or adaptation
+- **Modular integration** — the mass-shifting mechanism can be integrated into existing suitcase frames without structural redesign
+
+
+## Future Work
+
+- Quantitative handling-effort measurement (e.g., wrist torque sensor comparison with/without balancing)
+- Extension to wheeled carts and logistics platforms
+- On-device inference optimization (microcontroller deployment, removing laptop dependency)
 
 ## Getting Started
 
@@ -269,9 +341,9 @@ Auto_Balancing_Case/
 
 | Name | Contributions |
 |------|--------------|
-| **@erickun0125** | Sim2Real bridge, hardware integration, policy deployment |
-| **@toddjrdl** | Isaac Lab environment, reward engineering, training |
-| **Injae Jun** | System integration, debugging |
+| **@erickun0125** | IsaacLab Environment Setting, Sim2Real Bridge, RL Agent Training |
+| **@toddjrdl** | CAD Model Design, Hardware Integration, Policy Deployment |
+| **@juninjae** | Actuator & Sensor System Design, System Integration, Real World Deployment |
 
 ## Acknowledgments
 
