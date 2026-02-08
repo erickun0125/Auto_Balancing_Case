@@ -1,0 +1,154 @@
+# Auto Balancing Case Interface Configuration
+# Manages settings for policy, sensor, actuator, and system subsystems.
+
+# ============================================================================
+# 1. Policy Interface Configuration
+# ============================================================================
+policy:
+  # Trained model path (overridden per platform below)
+  model_path: "trained_model/model_49999.pt"
+  device: "cpu"  # "cpu" or "cuda"
+
+  # Network architecture (must match the training config exactly)
+  actor_hidden_dims: [256, 128, 64]
+  critic_hidden_dims: [256, 128, 64]
+  activation: "elu"
+  init_noise_std: 1.0
+  noise_std_type: "scalar"
+
+  # Observation settings
+  obs_history_length: 4       # Number of timesteps in observation history
+  obs_dim_per_timestep: 8     # joint_pos(1) + joint_vel(1) + prev_action(1) + wheel_forces(4) + handle_force(1)
+  num_actions: 1              # Single balance joint
+
+  # Control frequency — matches Isaac Lab (decimation=4, dt=0.005s -> 50Hz)
+  control_frequency: 50.0    # Hz
+
+# ============================================================================
+# 2. Sensor Interface Configuration
+# ============================================================================
+sensor:
+  load_cell:
+    type: "hx711_arduino"
+    connection:
+      port: "/dev/ttyACM0"   # Overridden per platform below
+      baudrate: 115200
+      timeout: 2.0           # seconds
+
+    calibration:
+      auto_load_on_startup: true
+      calibration_file: "load_cell_calibration.npz"
+      reference_weight: 200.0  # grams
+
+    sensors:
+      wheel_sensors:
+        count: 4
+        names: ["FL", "FR", "RL", "RR"]
+        channels: [0, 1, 2, 3]
+      handle_sensor:
+        count: 1
+        names: ["handle"]
+        channels: [4]
+
+    processing:
+      sampling_rate: 100.0    # Hz
+      filter_enabled: true
+      filter_type: "moving_average"
+      filter_window: 5
+      noise_threshold: 0.1   # N
+
+# ============================================================================
+# 3. Actuator Interface Configuration
+# ============================================================================
+actuator:
+  motor:
+    type: "dynamixel_xl430"
+    connection:
+      # 2 serial ports: port1 for motors [1,2], port2 for motors [3,4]
+      devices:
+        - "/dev/ttyUSB0"     # Overridden per platform below
+        - "/dev/ttyUSB1"
+      baudrate: 57600
+      protocol_version: 2.0
+      timeout: 1.0           # seconds
+
+    motors:
+      port1_motors:
+        ids: [1, 2]          # +theta direction
+        control_mode: "position"
+        profile_velocity: 50       # 0-1023 (0 = max speed)
+        profile_acceleration: 20   # 0-32767
+      port2_motors:
+        ids: [3, 4]          # -theta direction (mirrored)
+        control_mode: "position"
+        profile_velocity: 50
+        profile_acceleration: 20
+
+    limits:
+      position_limit:
+        min: -0.5            # rad (+/-28.6 deg)
+        max: 0.5             # rad
+      velocity_limit: 6.0   # rad/s
+      current_limit: 500    # mA
+      temperature_limit: 80 # Celsius
+
+    control:
+      pid_gains:
+        position_p: 800
+        position_i: 0
+        position_d: 0
+      monitoring:
+        enabled: true
+        frequency: 100.0     # Hz
+        log_data: false
+
+# ============================================================================
+# 4. Global System Configuration
+# ============================================================================
+system:
+  safety:
+    emergency_stop:
+      enabled: true
+      angle_limit: 0.51     # rad (emergency stop threshold, slightly above max action)
+      force_limit: 100.0    # N
+    watchdog:
+      enabled: true
+      timeout: 1.0          # seconds
+
+  session:
+    max_episode_steps: 4000  # 50Hz * 8s (matches Isaac Lab episode_length_s)
+    episode_timeout: 8.0     # seconds
+    auto_reset: true
+
+  logging:
+    enabled: true
+    level: "INFO"            # DEBUG, INFO, WARNING, ERROR
+    log_file: "auto_balancing_case.log"
+    console_output: true
+    data_logging:
+      enabled: false
+      frequency: 50.0        # Hz
+      output_dir: "logs/data"
+      format: "csv"          # csv, json, pickle
+
+  performance:
+    monitor_timing: true
+    target_control_frequency: 50.0  # Hz
+    timing_warning_threshold: 0.02  # seconds (20ms = 1 control cycle)
+    timing_error_threshold: 0.05    # seconds (50ms)
+
+# ============================================================================
+# 5. Platform-Specific Overrides
+# ============================================================================
+# Serial port assignments differ between Windows and Linux.
+# The ConfigManager auto-detects the platform and applies the matching overrides.
+platform_overrides:
+  windows:
+    sensor.load_cell.connection.port: "COM7"
+    actuator.motor.connection.devices: ["COM11", "COM12"]
+    policy.model_path: "trained_model/model_49999.pt"
+
+  linux:
+    sensor.load_cell.connection.port: "/dev/ttyACM0"
+    actuator.motor.connection.devices: ["/dev/ttyUSB0", "/dev/ttyUSB1"]
+    policy.model_path: "trained_model/model_49999.pt"

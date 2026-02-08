@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# PyTorch / ML artifacts
+*.pt
+*.pth
+*.onnx
+*.pkl
+
+# Trained model checkpoints (download separately — see README)
+suitcase_learning/trained_models/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+.thumbs/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs
+*.log
+logs/
+
+# Calibration data
+*.npz
+
+# Third-party SDKs (install separately)
+suitcase_sim2real/actuator/DynamixelSDK/
+suitcase_sim2real/sensor/HX711_ADC/
+
+# Arduino build artifacts
+suitcase_sim2real/firmware/**/build/

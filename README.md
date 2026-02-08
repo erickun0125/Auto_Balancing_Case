@@ -1,221 +1,290 @@
-# Auto Balancing Case: End-to-End Robotics System
+# Auto Balancing Case
 
-A comprehensive robotics project implementing an **Auto Balancing Suitcase** from CAD design to real-world deployment, featuring hardware design, physics simulation, reinforcement learning, and low-level motor control.
+***A self-balancing wheeled suitcase powered by sim-to-real reinforcement learning***
 
-**Note: This project is currently under active development. Components and documentation will be continuously updated.**
+![Python](https://img.shields.io/badge/Python-3.8+-3776AB?logo=python&logoColor=white)
+![PyTorch](https://img.shields.io/badge/PyTorch-2.x-EE4C2C?logo=pytorch&logoColor=white)
+![Isaac Lab](https://img.shields.io/badge/NVIDIA-Isaac%20Lab-76B900?logo=nvidia&logoColor=white)
+![Arduino](https://img.shields.io/badge/Arduino-Firmware-00878F?logo=arduino&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-blue)
 
-## Project Overview
+<p align="center">
+  <em>Demo video/GIF coming soon — add to <code>docs/media/</code></em>
+</p>
 
-This repository demonstrates a complete end-to-end robotics development pipeline:
+## Highlights
 
-- **Hardware Design & Manufacturing**: CAD-based mechanical design with URDF models for a self-balancing wheeled suitcase
-- **Physics Simulation**: High-fidelity simulation environment using NVIDIA Isaac Lab
-- **Reinforcement Learning**: Policy training for balance control using PPO algorithm  
-- **Sim2Real Transfer**: Bridge between simulation and real hardware deployment
-- **Low-Level Control**: Real-time motor control using Dynamixel SDK
+- **End-to-end pipeline**: CAD design → URDF → Isaac Lab simulation → PPO training → real hardware deployment
+- **Sim-to-real transfer** with domain randomization (external forces, velocity pushes, mass variation)
+- **Real-time 50 Hz control** with 4 Dynamixel XL430 motors and 5 HX711 load cells
+- **Custom reward engineering** with 9 reward terms for contact force balancing
+- **2,048 parallel environments**, [256, 128, 64] actor-critic network trained over 15K iterations
+- **Multi-sensor fusion**: wheel contact forces + handle force + joint state + action history → 32-dim observation
 
-The system learns to maintain balance of a wheeled suitcase against external disturbances through a single actuated joint between the base platform and luggage case.
+## Table of Contents
 
-## System Architecture
+- [System Overview](#system-overview)
+- [Architecture](#architecture)
+- [Technical Deep Dive](#technical-deep-dive)
+- [Getting Started](#getting-started)
+- [Usage](#usage)
+- [Project Structure](#project-structure)
+- [Key Specifications](#key-specifications)
+- [Contributors](#contributors)
+- [Acknowledgments](#acknowledgments)
+- [License](#license)
 
+## System Overview
+
+The Auto Balancing Case learns to keep a wheeled suitcase upright against external disturbances using a single actuated hinge joint between the base platform and the luggage body. A PPO policy is trained in NVIDIA Isaac Lab simulation across 2,048 parallel environments, then deployed directly on real hardware via a Python bridge running at 50 Hz — no fine-tuning on real hardware required.
+
+```mermaid
+graph LR
+    A["CAD Design<br/>SolidWorks"] --> B["URDF Model"]
+    B --> C["USD Conversion<br/>Isaac Lab"]
+    C --> D["RL Training<br/>PPO / 2048 envs"]
+    D --> E["Trained Policy<br/>.pt checkpoint"]
+    E --> F["Sim2Real Bridge<br/>Python 50Hz"]
+    F --> G["Hardware<br/>4 Motors + 5 Sensors"]
 ```
-Auto Balancing Case System
-├── Hardware Design (suitcase_model/)
-│   ├── CAD Models & URDF
-│   ├── Mechanical Assembly
-│   └── ROS Integration
-├── Simulation Environment (IsaacLab/)
-│   ├── Physics Simulation
-│   ├── RL Environment
-│   └── Policy Training
-├── Sim2Real Pipeline (suitcase_sim2real/)
-│   ├── Hardware Bridge
-│   ├── Policy Deployment
-│   └── Real-time Control
-└── Motor Control (DynamixelSDK/)
-    ├── Low-level Communication
-    ├── Motor Interface
-    └── Hardware Abstraction
+
+## Architecture
+
+### System Architecture
+
+```mermaid
+graph TB
+    subgraph Simulation ["Simulation (Isaac Lab)"]
+        ENV["2048 Parallel Envs<br/>PhysX 200Hz"] --> PPO["PPO Training<br/>RSL-RL"]
+        PPO --> POLICY["Actor-Critic Network<br/>256 → 128 → 64, ELU"]
+    end
+
+    subgraph Bridge ["Sim2Real Bridge (Python)"]
+        CONFIG["Config Manager<br/>YAML + Platform Override"] --> CTRL["AutoBalancingCaseBridge<br/>50Hz Control Loop"]
+        CTRL --> PI["Policy Interface<br/>PyTorch Inference"]
+        CTRL --> MI["Motor Interface<br/>Dynamixel Protocol 2.0"]
+        CTRL --> SI["Sensor Interface<br/>Arduino Serial CSV"]
+    end
+
+    subgraph Hardware ["Hardware"]
+        MI --> MOTORS["4× Dynamixel XL430<br/>2 ports, ±θ"]
+        SI --> ARDUINO["Arduino Mega<br/>6× HX711 ADC"]
+        ARDUINO --> LC["5 Load Cells<br/>4 wheel + 1 handle"]
+    end
+
+    POLICY -.->|".pt checkpoint"| PI
 ```
 
-## Repository Structure
+### Observation Space
 
-### Hardware Design (`suitcase_model/`)
-Contains CAD-based hardware design and manufacturing specifications:
-- **`Auto_Balancing_Case/`**: Primary URDF model with joint definitions
-- **`assembly_final_donot_export_description/`**: ROS package with meshes and launch files
-- **`assembly_final_urdf_description/`**: Complete URDF description with Gazebo integration
+Each timestep produces an 8-dimensional observation. With 4-step history, the policy sees a **32-dimensional input**.
 
-**Key Components:**
-- 4-wheel mobile platform with individual wheel control
-- Single balance actuator (Revolute_motor) with ±30° range
-- Luggage case body with handle assembly
-- Contact sensors for ground interaction
+| Index | Component | Dims | Source | Description |
+|-------|-----------|------|--------|-------------|
+| 0 | `joint_pos` | 1 | Motor encoder | Relative joint position (rad) |
+| 1 | `joint_vel` | 1 | Motor encoder | Joint velocity (rad/s) |
+| 2 | `prev_action` | 1 | Policy output | Previous action [−0.5, 0.5] |
+| 3–6 | `wheel_forces` | 4 | HX711 load cells | Per-wheel contact force (N) [FR, RR, FL, RL] |
+| 7 | `handle_force` | 1 | HX711 load cell | External handle force (N) |
 
-### Simulation Environment (`IsaacLab/`)
-Physics simulation and reinforcement learning environment built on NVIDIA Isaac Sim:
+### Reward Engineering
 
-- **Environment**: `Isaac-Suitecase-Flat-v0` - Training environment with external disturbances
-- **Task**: Balance control through single actuated joint while maintaining wheel ground contact
-- **Algorithm**: PPO (Proximal Policy Optimization) with custom reward functions
-- **Observations**: Joint positions, velocities, contact forces, body orientation
-- **Actions**: Target position for balance actuator
+9 reward terms shape the balancing behavior:
 
-**Key Features:**
-- High-fidelity physics simulation with PhysX
-- Domain randomization for robustness
-- Multiple disturbance patterns (force, velocity, torque)
-- Contact-aware reward design
+| Reward Term | Weight | Type | Purpose |
+|------------|--------|------|---------|
+| `is_alive` | +1.0 | Bonus | Survival incentive |
+| `is_terminated` | −100.0 | Penalty | Large termination punishment |
+| `flat_orientation_l2` | −10.0 | Penalty | Keep platform horizontal |
+| `ang_vel_xy_l2` | −0.5 | Penalty | Minimize angular oscillation |
+| `hinge_pos_deviation` | −5.0 | Penalty | Stay near default joint position |
+| `desired_contacts` | −10.0 | Penalty | Maintain all 4 wheel contacts |
+| `wheel_contact_balance` | +3.0 | Reward | Equal force distribution (exp(−variance/mean)) |
+| `wheel_contact_min_max` | −0.1 | Penalty | Reduce max–min force difference |
+| `action_rate_l2` | −0.01 | Penalty | Smooth actions |
 
-### Sim2Real Pipeline (`suitcase_sim2real/`)
-Bridge between simulation and real hardware deployment:
+## Technical Deep Dive
 
-#### `rl_hardware_bridge.py`
-- Loads trained Isaac Lab policies
-- Manages real-time control loop at 50Hz
-- Handles observation preprocessing and action post-processing
-- Provides episode-based and continuous control modes
+### Sim-to-Real Transfer
 
-#### `dynamixel_xl430_interface.py`
-- Real-time hardware interface for Dynamixel XL430 motors
-- Multi-threaded reading for low-latency sensor feedback
-- Position, velocity, and current control modes
-- Observation normalization and action denormalization
+The policy transfers from simulation to real hardware without fine-tuning. Key strategies:
 
-### Motor Control (`DynamixelSDK/`)
-Official Dynamixel SDK for low-level motor communication:
-- Protocol 2.0 communication
-- Multiple language bindings (Python, C++, Java, etc.)
-- Hardware abstraction layer
-- Real-time control capabilities
+- **Domain randomization**: 4 disturbance groups applied to partitioned environment subsets
+  - Velocity-based pushes (x-axis, randomized range)
+  - External wrenches with position offsets
+  - Directional force/torque application
+  - Combined push + wrench events
+- **Raw observations**: No normalization applied — same value ranges in sim and real hardware
+- **Observation noise injection**: Additive uniform noise on joint position (±0.005), velocity (±0.05), and forces (±0.01)
+
+### Real-Time Control Pipeline
+
+The 50 Hz control loop in `AutoBalancingCaseBridge` executes 7 steps per cycle (20 ms budget):
+
+1. **Read motor state** — Position and velocity via Dynamixel Protocol 2.0 (2 serial ports)
+2. **Read sensor state** — 5 load cell forces via Arduino serial CSV
+3. **Construct observation** — 8-dim vector with relative joint position (Isaac Lab compatible)
+4. **Update history** — Append to 4-step deque (oldest entries dropped)
+5. **Run policy inference** — PyTorch forward pass on 32-dim input (CPU, ~1 ms)
+6. **Clip and send command** — Action clipped to [−0.5, 0.5] rad → 4 motors (+θ, +θ, −θ, −θ)
+7. **Maintain timing** — Sleep for remainder of 20 ms cycle; warn if >10 ms overrun
+
+**Safety systems**: Emergency stop at 0.51 rad tilt, watchdog timeout at 1.0 s.
+
+### Hardware Design
+
+- **Base platform**: 4-wheel mobile base (~0.98 kg, 36 cm × 23 cm)
+- **Luggage body**: ~5.6 kg connected via single revolute joint (Y-axis, ±30°)
+- **Motors**: 4× Dynamixel XL430-W250 (Protocol 2.0, 57600 baud, center=2048)
+- **Sensors**: 5× HX711 load cells (4 wheel + 1 handle), Arduino at 115200 baud / 10 Hz
+- **Custom parts**: 3D-printed differential bevel gears, motor support, gearbox wing
 
 ## Getting Started
 
 ### Prerequisites
-- Ubuntu 20.04/22.04
+
 - Python 3.8+
-- NVIDIA GPU (for Isaac Lab simulation)
-- Dynamixel XL430 motors (for hardware deployment)
+- NVIDIA GPU with CUDA (for Isaac Lab training only)
+- Dynamixel XL430 motors + Arduino Mega (for hardware deployment)
 
 ### Installation
 
-1. **Clone the repository**
 ```bash
-git clone <repository-url>
-cd auto-balancing-case
-```
+# Clone the repository
+git clone https://github.com/erickun0125/Auto_Balancing_Case.git
+cd Auto_Balancing_Case
 
-2. **Setup Isaac Lab Environment**
-```bash
-cd IsaacLab
-./isaaclab.sh --install
-```
-
-3. **Install Sim2Real Dependencies**
-```bash
+# Install sim2real bridge dependencies
 cd suitcase_sim2real
-pip install torch numpy pyyaml
+pip install -r requirements.txt
+
+# Isaac Lab setup (for training only)
+# Follow NVIDIA Isaac Lab installation guide, then register custom environments
 ```
 
-4. **Setup Dynamixel SDK**
+## Usage
+
+### Training (Simulation)
+
 ```bash
-cd DynamixelSDK/python
-pip install .
+cd suitcase_learning
+./isaaclab.sh -p scripts/train.py --task Isaac-Suitecase-Flat-v0 --num_envs 2048
 ```
 
-### Usage Examples
+### Evaluation (Simulation)
 
-#### 1. Training in Simulation
 ```bash
-cd IsaacLab
-./isaaclab.sh -p scripts/rsl_rl/train.py --task Isaac-Suitecase-Flat-v0 --num_envs 4096
+./isaaclab.sh -p scripts/play.py --task Isaac-Suitecase-Flat-Play-v0 \
+  --checkpoint trained_models/model_49999.pt
 ```
 
-#### 2. Testing Trained Policy
+### Hardware Deployment
+
 ```bash
-./isaaclab.sh -p scripts/rsl_rl/play.py --task Isaac-Suitecase-Flat-Play-v0 --checkpoint path/to/model.pt
+cd suitcase_sim2real/src
+
+# Step 1: Calibrate load cells (first time only)
+python run_policy.py --mode calibrate
+
+# Step 2: Run single episode (4000 steps = 8 seconds)
+python run_policy.py --mode episode
+
+# Step 3: Run continuously until Ctrl+C
+python run_policy.py --mode continuous
+
+# Custom config
+python run_policy.py --config path/to/config.yml --mode episode
 ```
 
-#### 3. Hardware Deployment
-```bash
-cd suitcase_sim2real
-python run_policy.py --model_path path/to/trained_model.pt --motor_ids 1 2 3 4
+## Project Structure
+
+```
+Auto_Balancing_Case/
+├── suitcase_learning/               # Isaac Lab simulation & RL training
+│   ├── envs/                        #   Custom environment & MDP definitions
+│   │   ├── suitecase_env_cfg.py     #     Environment config, rewards, observations
+│   │   └── mdp_for_ABC.py           #     Custom MDP functions (forces, events)
+│   ├── agents/                      #   PPO hyperparameters
+│   │   └── rsl_rl_ppo_cfg.py
+│   ├── scripts/                     #   Training & evaluation scripts
+│   ├── assets/                      #   USD robot model for Isaac Lab
+│   └── trained_models/              #   Checkpoints & exported policies
+│
+├── suitcase_sim2real/               # Real hardware deployment
+│   ├── src/                         #   Main bridge code
+│   │   ├── run_policy.py            #     CLI entry point (calibrate/episode/continuous)
+│   │   ├── bridge.py                #     50Hz control loop orchestrator
+│   │   ├── policy_interface.py      #     RSL-RL model loading & inference
+│   │   ├── motor_interface.py       #     4-motor control (2 serial ports)
+│   │   ├── sensor_interface.py      #     5 load cell sensor interface
+│   │   ├── config_manager.py        #     YAML config with platform overrides
+│   │   └── config/interface_config.yml    # All hardware/policy settings
+│   ├── firmware/                    #   Arduino firmware (HX711 ADC readout)
+│   └── requirements.txt
+│
+├── suitcase_model/                  # CAD models & URDF robot descriptions
+│   ├── urdf/                        #   Robot URDF definitions
+│   ├── stl/                         #   3D-printable mechanical parts
+│   └── ros_package/                 #   ROS-compatible URDF package
+│
+├── docs/media/                      # Demo videos, screenshots, diagrams
+├── LICENSE
+└── README.md
 ```
 
-#### 4. Real-time Hardware Bridge
-```python
-from rl_hardware_bridge import RLHardwareBridge, PolicyConfig
+## Key Specifications
 
-# Configure policy
-config = PolicyConfig(
-    model_path="trained_policy.pt",
-    observation_space={'joint_pos': {'shape': [4]}, 'joint_vel': {'shape': [4]}},
-    action_space={'shape': [1]},  # Single balance actuator
-    control_frequency=50.0
-)
+### Training Configuration
 
-# Initialize and run
-bridge = RLHardwareBridge(config, motor_ids=[1, 2, 3, 4])
-bridge.run_continuous()
-```
-
-## Technical Specifications
+| Parameter | Value |
+|-----------|-------|
+| Algorithm | PPO (Proximal Policy Optimization) |
+| Framework | RSL-RL on NVIDIA Isaac Lab |
+| Parallel Environments | 2,048 |
+| Physics Frequency | 200 Hz (dt = 0.005 s) |
+| Control Frequency | 50 Hz (decimation = 4) |
+| Episode Length | 8.0 s (4,000 steps) |
+| Network Architecture | Actor & Critic: [256, 128, 64], ELU |
+| Observation Dim | 32 (8 per timestep × 4 history) |
+| Action Dim | 1 (joint position target, rad) |
+| Learning Rate | 1e-3 |
+| Max Iterations | 15,000 |
+| Discount Factor (γ) | 0.99 |
+| GAE Lambda (λ) | 0.95 |
 
 ### Hardware Specifications
-- **Platform**: 4-wheel mobile base (36cm × 23cm)
-- **Actuator**: Single balance joint with ±30° range
-- **Motors**: Dynamixel XL430 series
-- **Weight**: Approximately 6.5kg total system mass
-- **Control Frequency**: 50Hz real-time control
 
-### Simulation Environment
-- **Physics Engine**: NVIDIA PhysX
-- **Simulation Frequency**: 120Hz physics, 50Hz control
-- **Training**: Multiple parallel environments
-- **Algorithm**: PPO with custom reward shaping
-- **Observation Dim**: Variable (joint states + contact forces)
-- **Action Dim**: 1 (balance actuator target)
+| Component | Detail |
+|-----------|--------|
+| Motors | 4× Dynamixel XL430-W250 |
+| Motor Protocol | Protocol 2.0, 57600 baud, 2 serial ports |
+| Load Cells | 5× HX711 (4 wheel + 1 handle) |
+| Sensor MCU | Arduino Mega, 115200 baud, 10 Hz |
+| Control Loop | 50 Hz (20 ms cycle) |
+| Joint Range | ±0.5 rad (±28.6°) |
+| Emergency Stop | 0.51 rad tilt threshold |
+| System Mass | ~6.5 kg |
 
-## Key Features
+## Contributors
 
-### Advanced Simulation
-- **Domain Randomization**: Mass, friction, motor parameters
-- **Disturbance Modeling**: External forces, velocity perturbations
-- **Contact Dynamics**: Wheel-ground interaction modeling
-- **Sensor Simulation**: Realistic noise and latency modeling
-
-### Robust Control
-- **Multi-Modal Disturbances**: Force, torque, and velocity-based
-- **Contact-Aware Policy**: Maintains wheel ground contact
-- **Real-time Performance**: 50Hz control loop
-- **Fault Tolerance**: Motor error detection and recovery
-
-### Production Ready
-- **Modular Architecture**: Separate simulation, training, and deployment
-- **Hardware Abstraction**: Easy integration with different motor types
-- **Monitoring & Logging**: Comprehensive system state tracking
-- **Safety Features**: Emergency stops and limit checking
-
-## Research Applications
-
-This project serves as a comprehensive example for:
-- **Sim2Real Transfer**: Bridging simulation and reality gaps
-- **Contact-Rich Manipulation**: Learning with complex contact dynamics  
-- **Real-time RL Deployment**: Production-ready policy deployment
-- **Hardware-Software Co-design**: Integrated system development
-- **Robotic Product Development**: End-to-end development pipeline
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+| Name | Contributions |
+|------|--------------|
+| **@erickun0125** | Sim2Real bridge, hardware integration, policy deployment |
+| **@toddjrdl** | Isaac Lab environment, reward engineering, training |
+| **Injae Jun** | System integration, debugging |
 
 ## Acknowledgments
 
-- **NVIDIA Isaac Lab**: Physics simulation and RL framework
-- **Robotis Dynamixel**: Motor hardware and SDK
-- **ROS Community**: URDF standards and tools
-- **PyTorch**: Deep learning framework
+- [NVIDIA Isaac Lab](https://isaac-sim.github.io/IsaacLab/) — GPU-accelerated physics simulation & RL framework
+- [RSL-RL](https://github.com/leggedrobotics/rsl_rl) — PPO implementation from Robotic Systems Lab (ETH Zurich)
+- [Robotis Dynamixel](https://www.robotis.us/) — XL430 motor hardware and SDK
+- [PyTorch](https://pytorch.org/) — Neural network framework
+- [HX711_ADC](https://github.com/olkal/HX711_ADC) — Arduino load cell library
+
+## License
+
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
 
 ---
 
-*This project demonstrates the complete robotics development lifecycle from concept to deployment, showcasing modern tools and techniques in robotics, simulation, and machine learning.*
+*Built at Seoul National University. Demonstrates a complete robotics development pipeline from concept to real-world deployment.*

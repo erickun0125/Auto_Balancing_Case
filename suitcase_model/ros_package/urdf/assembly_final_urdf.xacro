@@ -1,0 +1,306 @@
+<?xml version="1.0" ?>
+<robot name="assembly_final_urdf" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+<!-- 1) Declare a dummy world link -->
+<link name="world"/>
+
+<!-- 2) Connect world → base_link with a floating joint -->
+  <!-- delete collisions -->
+<joint name="world_to_base" type="floating">
+  <parent link="world"/>
+  <child  link="base_link"/>
+  <origin xyz="0 0 0" rpy="0 0 0"/>
+</joint>
+
+<xacro:include filename="$(find assembly_final_urdf_description)/urdf/materials.xacro" />
+<xacro:include filename="$(find assembly_final_urdf_description)/urdf/assembly_final_urdf.trans" />
+<xacro:include filename="$(find assembly_final_urdf_description)/urdf/assembly_final_urdf.gazebo" />
+<link name="base_link">
+  <inertial>
+    <origin xyz="0.17999999999999997 0.115 0.005003006827026274" rpy="0 0 0"/>
+    <mass value="0.9847218407587564"/>
+    <inertia ixx="0.004346" iyy="0.010634" izz="0.014964" ixy="-0.0" iyz="0.0" ixz="-0.0"/>
+  </inertial>
+  <visual>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://assembly_final_urdf_description/meshes/base_link.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://assembly_final_urdf_description/meshes/base_link.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="FR_wheelbase_1">
+  <inertial>
+    <origin xyz="0.004854891037663869 0.0 -0.01224396424044122" rpy="0 0 0"/>
+    <mass value="0.026348088954006088"/>
+    <inertia ixx="5e-06" iyy="4e-06" izz="5e-06" ixy="-0.0" iyz="0.0" ixz="1e-06"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.02 -0.21 -0.0001" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://assembly_final_urdf_description/meshes/FR_wheelbase_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+</link>
+
+<link name="RR_wheelbase_1">
+  <inertial>
+    <origin xyz="0.004821350892733667 -2.7755575615628914e-17 -0.012195503618703826" rpy="0 0 0"/>
+    <mass value="0.02614973311170209"/>
+    <inertia ixx="5e-06" iyy="4e-06" izz="5e-06" ixy="-0.0" iyz="0.0" ixz="1e-06"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.34 -0.21 -0.0001" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://assembly_final_urdf_description/meshes/RR_wheelbase_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+</link>
+
+<link name="FL_wheelbase_1">
+  <inertial>
+    <origin xyz="0.0048548910376638756 -1.0408340855860843e-17 -0.012243964240441205" rpy="0 0 0"/>
+    <mass value="0.02634808895400608"/>
+    <inertia ixx="5e-06" iyy="4e-06" izz="5e-06" ixy="-0.0" iyz="-0.0" ixz="1e-06"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.02 -0.02 -0.0001" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://assembly_final_urdf_description/meshes/FL_wheelbase_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+</link>
+
+<link name="RL_wheelbase_1">
+  <inertial>
+    <origin xyz="0.004821350892733667 -2.7755575615628914e-17 -0.012195503618703807" rpy="0 0 0"/>
+    <mass value="0.02614973311170209"/>
+    <inertia ixx="5e-06" iyy="4e-06" izz="5e-06" ixy="-0.0" iyz="-0.0" ixz="1e-06"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.34 -0.02 -0.0001" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://assembly_final_urdf_description/meshes/RL_wheelbase_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+</link>
+
+<link name="FL_wheel_1">
+  <inertial>
+    <origin xyz="5.988265439071938e-15 -3.469446951953614e-18 1.3877787807814457e-17" rpy="0 0 0"/>
+    <mass value="0.04246628391615553"/>
+    <inertia ixx="2.4e-05" iyy="1.3e-05" izz="2.4e-05" ixy="-0.0" iyz="0.0" ixz="0.0"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.04 -0.02 0.0349" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://assembly_final_urdf_description/meshes/FL_wheel_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.04 -0.02 0.0349" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://assembly_final_urdf_description/meshes/FL_wheel_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="RR_wheel_1">
+  <inertial>
+    <origin xyz="-1.3006670518400654e-07 0.0 -2.0816681711721685e-17" rpy="0 0 0"/>
+    <mass value="0.042466283916155555"/>
+    <inertia ixx="2.4e-05" iyy="1.3e-05" izz="2.4e-05" ixy="0.0" iyz="-0.0" ixz="0.0"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.35992 -0.21 0.0349" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://assembly_final_urdf_description/meshes/RR_wheel_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.35992 -0.21 0.0349" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://assembly_final_urdf_description/meshes/RR_wheel_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="FR_wheel_1">
+  <inertial>
+    <origin xyz="6.0021432268797525e-15 0.0 1.3877787807814457e-17" rpy="0 0 0"/>
+    <mass value="0.04246628391615553"/>
+    <inertia ixx="2.4e-05" iyy="1.3e-05" izz="2.4e-05" ixy="0.0" iyz="0.0" ixz="0.0"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.04 -0.21 0.0349" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://assembly_final_urdf_description/meshes/FR_wheel_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.04 -0.21 0.0349" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://assembly_final_urdf_description/meshes/FR_wheel_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="RL_wheel_1">
+  <inertial>
+    <origin xyz="-1.3006670512849539e-07 6.245004513516506e-17 0.0" rpy="0 0 0"/>
+    <mass value="0.042466283916155555"/>
+    <inertia ixx="2.4e-05" iyy="1.3e-05" izz="2.4e-05" ixy="-0.0" iyz="0.0" ixz="0.0"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.35992 -0.02 0.0349" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://assembly_final_urdf_description/meshes/RL_wheel_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.35992 -0.02 0.0349" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://assembly_final_urdf_description/meshes/RL_wheel_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="luggage_case_1">
+  <inertial>
+    <origin xyz="1.0432210650890283e-12 0.11521688237327213 0.17177721373500104" rpy="0 0 0"/>
+    <mass value="5.398014230764779"/>
+    <inertia ixx="0.219835" iyy="0.247344" izz="0.11771" ixy="-0.0" iyz="-0.000228" ixz="0.0"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.18 -0.0 -0.06" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://assembly_final_urdf_description/meshes/luggage_case_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="0.0 0.115 0.29688" rpy="0 0 0"/>
+    <geometry>
+      <box size="0.36 0.23 0.5"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="rotating_handle_1">
+  <inertial>
+    <origin xyz="-1.0524914273446484e-13 -0.024887555090611486 0.014429098880656632" rpy="0 0 0"/>
+    <mass value="2.545063688003066"/>
+    <inertia ixx="0.01956" iyy="0.028005" izz="0.009462" ixy="-0.0" iyz="4e-06" ixz="-0.0"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.18 0.0 -0.426188" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://assembly_final_urdf_description/meshes/rotating_handle_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.18 0.0 -0.426188" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://assembly_final_urdf_description/meshes/rotating_handle_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<joint name="Revolute 1" type="continuous">
+  <origin xyz="0.02 0.21 0.0001" rpy="0 0 0"/>
+  <parent link="base_link"/>
+  <child link="FR_wheelbase_1"/>
+  <axis xyz="0.0 0.0 -1.0"/>
+</joint>
+
+<joint name="Revolute 2" type="continuous">
+  <origin xyz="0.34 0.21 0.0001" rpy="0 0 0"/>
+  <parent link="base_link"/>
+  <child link="RR_wheelbase_1"/>
+  <axis xyz="0.0 0.0 -1.0"/>
+</joint>
+
+<joint name="Revolute 3" type="continuous">
+  <origin xyz="0.02 0.02 0.0001" rpy="0 0 0"/>
+  <parent link="base_link"/>
+  <child link="FL_wheelbase_1"/>
+  <axis xyz="0.0 0.0 -1.0"/>
+</joint>
+
+<joint name="Revolute 4" type="continuous">
+  <origin xyz="0.34 0.02 0.0001" rpy="0 0 0"/>
+  <parent link="base_link"/>
+  <child link="RL_wheelbase_1"/>
+  <axis xyz="0.0 0.0 -1.0"/>
+</joint>
+
+<joint name="Revolute 5" type="continuous">
+  <origin xyz="0.02 0.0 -0.035" rpy="0 0 0"/>
+  <parent link="FL_wheelbase_1"/>
+  <child link="FL_wheel_1"/>
+  <axis xyz="0.0 1.0 0.0"/>
+</joint>
+
+<joint name="Revolute 6" type="continuous">
+  <origin xyz="0.01992 0.0 -0.035" rpy="0 0 0"/>
+  <parent link="RR_wheelbase_1"/>
+  <child link="RR_wheel_1"/>
+  <axis xyz="0.0 1.0 0.0"/>
+</joint>
+
+<joint name="Revolute 7" type="continuous">
+  <origin xyz="0.02 0.0 -0.035" rpy="0 0 0"/>
+  <parent link="FR_wheelbase_1"/>
+  <child link="FR_wheel_1"/>
+  <axis xyz="0.0 1.0 0.0"/>
+</joint>
+
+<joint name="Revolute 8" type="continuous">
+  <origin xyz="0.01992 0.0 -0.035" rpy="0 0 0"/>
+  <parent link="RL_wheelbase_1"/>
+  <child link="RL_wheel_1"/>
+  <axis xyz="0.0 1.0 0.0"/>
+</joint>
+
+<joint name="Revolute_motor" type="revolute">
+  <origin xyz="0.18 0.0 0.06" rpy="0 0 0"/>
+  <parent link="base_link"/>
+  <child link="luggage_case_1"/>
+  <axis xyz="0.0 -1.0 0.0"/>
+  
+  <!-- 1) angle & torque limits +- 30 degrees, 3N.m, 60 RPM maximum-->
+  <limit
+    lower="-0.5236"
+    upper=" 0.5236"
+    effort="3.0"
+    velocity="6.2832"
+  />
+</joint>
+
+<joint name="Revolute_handle" type="continuous">
+  <origin xyz="0.0 -0.0 0.366188" rpy="0 0 0"/>
+  <parent link="luggage_case_1"/>
+  <child link="rotating_handle_1"/>
+  <axis xyz="0.0 -1.0 -0.0"/>
+</joint>
+
+</robot>
+
+
+toddjrdl
